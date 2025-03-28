@@ -10,9 +10,6 @@ class Time(int):
 class Symbol(str):
     pass
 
-class Time(int):
-    pass
-
 class Product(int):
     pass
 
