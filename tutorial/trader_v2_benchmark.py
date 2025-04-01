@@ -2,8 +2,8 @@ from datamodel import OrderDepth, UserId, TradingState, Order
 from typing import List
 import string
 import jsonpickle
-import numpy as np
 import math
+from copy import deepcopy
 
 
 class Product:
@@ -316,6 +316,7 @@ class Trader:
         result = {}
 
         if Product.RESIN in self.params and Product.RESIN in state.order_depths:
+            order_depth = deepcopy(state.order_depths[Product.RESIN])
             resin_position = (
                 state.position[Product.RESIN]
                 if Product.RESIN in state.position
@@ -324,7 +325,7 @@ class Trader:
             resin_take_orders, buy_order_volume, sell_order_volume = (
                 self.take_orders(
                     Product.RESIN,
-                    state.order_depths[Product.RESIN],
+                    order_depth,
                     self.params[Product.RESIN]["fair_value"],
                     self.params[Product.RESIN]["take_width"],
                     resin_position,
@@ -333,7 +334,7 @@ class Trader:
             resin_clear_orders, buy_order_volume, sell_order_volume = (
                 self.clear_orders(
                     Product.RESIN,
-                    state.order_depths[Product.RESIN],
+                    order_depth,
                     self.params[Product.RESIN]["fair_value"],
                     self.params[Product.RESIN]["clear_width"],
                     resin_position,
@@ -343,7 +344,7 @@ class Trader:
             )
             resin_make_orders, _, _ = self.make_orders(
                 Product.RESIN,
-                state.order_depths[Product.RESIN],
+                order_depth,
                 self.params[Product.RESIN]["fair_value"],
                 resin_position,
                 buy_order_volume,
@@ -355,6 +356,7 @@ class Trader:
                 self.params[Product.RESIN]["soft_position_limit"],
             )
             result[Product.RESIN] = (
+                # resin_take_orders + resin_clear_orders
                 resin_take_orders + resin_clear_orders + resin_make_orders
             )
 
