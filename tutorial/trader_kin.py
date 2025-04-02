@@ -79,48 +79,56 @@ class Trader:
 
         return own_orders, buy_order_volume, sell_order_volume
 
-    def clear_position(self, product: str, order_depth: OrderDepth, fair: float | int, position: int, buy_order_volume: int, sell_order_volume: int) -> list[Order]:
+    def clear_position(self, product: str, order_depth: OrderDepth, fair: float | int, position: int, buy_order_volume: int, sell_order_volume: int, position_limit: 20) -> list[Order]:
         pos_after_take = position + buy_order_volume - sell_order_volume
-        sell_orders = []
-        buy_orders = []
-        sell_order_volume = 0
-        buy_order_volume = 0
+        own_orders = []
 
         clear_width = 0
+
+        '''
+        if position after take > 0 then we want to sell to clear inventory
+        when creating sell orders, we check previous sell volume from take and add that to position to get anticipated position
+        so position - sell_order_volume is the position we anticipate to enforce limit for sell orders = ant_sell_position
+        so most we can sell is ant_sell_position - -position_limit
+        enforce this to sanity check edge cases
+
+        ideally we want to sell pos_after_take quantity to neutralize
+        '''
         
-        if pos_after_take > 0:
-            market_bids = list(order_depth.buy_orders.items())
-            market_bids.sort(reverse=True)
-            for bid_price, bid_volume in market_bids:
-                if pos_after_take <= 0:
-                    break
-                if bid_price >= fair + clear_width:
-                    sell_vol = min(bid_volume, pos_after_take)
-                    sell_order = Order(product, bid_price, -sell_vol)
-                    sell_orders.append(sell_order)
-                    pos_after_take -= sell_vol
-                    order_depth.buy_orders[bid_price] -= sell_vol
-                    if order_depth.buy_orders[bid_price] == 0:
-                        order_depth.buy_orders.pop(bid_price)
-                    sell_order_volume += sell_vol
+        market_bids = list(order_depth.buy_orders.items())
+        market_bids.sort(reverse=True)
 
-        elif pos_after_take < 0:
-            market_asks = list(order_depth.sell_orders.items())
-            market_asks.sort()
-            for ask_price, ask_volume in market_asks:
-                if pos_after_take >= 0:
-                    break
-                if ask_price <= fair - clear_width:
-                    buy_vol = min(-ask_volume, -pos_after_take)
-                    buy_order = Order(product, ask_price, buy_vol)
-                    buy_orders.append(buy_order)
-                    pos_after_take += buy_vol
-                    order_depth.sell_orders[ask_price] += buy_vol
-                    if order_depth.sell_orders[ask_price] == 0:
-                        order_depth.sell_orders.pop(ask_price)
-                    buy_order_volume += buy_vol
+        for bid_price, bid_volume in market_bids:
+            if pos_after_take > 0 and bid_price >= fair + clear_width:
+                sell_vol = min(bid_volume, pos_after_take, position - sell_order_volume - -position_limit)
+                sell_order = Order(product, bid_price, -sell_vol)
 
-        return buy_orders + sell_orders, buy_order_volume, sell_order_volume
+                own_orders.append(sell_order)
+                pos_after_take -= sell_vol
+                sell_order_volume += sell_vol
+
+                order_depth.buy_orders[bid_price] -= sell_vol
+                if order_depth.buy_orders[bid_price] == 0:
+                    order_depth.buy_orders.pop(bid_price)
+
+        
+        market_asks = list(order_depth.sell_orders.items())
+        market_asks.sort()
+
+        for ask_price, ask_volume in market_asks:
+            if pos_after_take < 0 and ask_price <= fair - clear_width:
+                buy_vol = min(-ask_volume, -pos_after_take, position_limit - (position + buy_order_volume))
+                buy_order = Order(product, ask_price, buy_vol)
+
+                own_orders.append(buy_order)
+                pos_after_take += buy_vol
+                buy_order_volume += buy_vol
+
+                order_depth.sell_orders[ask_price] += buy_vol
+                if order_depth.sell_orders[ask_price] == 0:
+                    order_depth.sell_orders.pop(ask_price)
+
+        return own_orders, buy_order_volume, sell_order_volume
 
     def calc_fair_kelp(self):
         pass
@@ -130,7 +138,7 @@ class Trader:
 
     def resin(self, order_depth: OrderDepth, position: int) -> list[Order]:
         take_orders, buy_order_volume, sell_order_volume = self.market_take(Product.RESIN, order_depth, 10000, 1, position, 20)
-        clear_orders, buy_order_volume, sell_order_volume = self.clear_position(Product.RESIN, order_depth, 10000, position, buy_order_volume, sell_order_volume)
+        clear_orders, buy_order_volume, sell_order_volume = self.clear_position(Product.RESIN, order_depth, 10000, position, buy_order_volume, sell_order_volume, 20)
 
         return take_orders + clear_orders
 
