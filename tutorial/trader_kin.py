@@ -130,6 +130,92 @@ class Trader:
 
         return own_orders, buy_order_volume, sell_order_volume
 
+    def market_make(self, product: str, order_depth: OrderDepth, fair: float | int, position: int, buy_order_volume: int, sell_order_volume: int, position_limit: 20) -> list[Order]:
+        
+        '''
+        let's say order depth after take and clear looks like this:
+
+        price   | volume
+        
+        14      | 7
+        13      | 15
+        12      | 8
+
+        09      | 6
+        08      | 11
+        07      | 2
+
+        if fair is 10 to make, valid price levels to penny and joing include bidding at 9; asking at 12, 11
+        for bid, only option is to join at 9, since at 10 we're not getting edge
+        for ask, have to decide how much to penny at 11 and join at 12
+
+        todo backtest these strategies:
+        1. always penny if possible and only penny, only join if penny not possible
+        2. divide equally between pennying and joining using some strategy
+
+        for 1
+        if best bid is 1 below fair, we can only join so join at best bid
+        if best bid is more than 1 below fair, we can penny at best bid + 1
+
+        so to be able to penny make on bid, best bid has to be minimum 2 below fair
+        if 1 below fair then we can join
+        
+        '''
+        orders = []
+
+        penny_width = 2
+        join_width = 1
+
+        market_bids = list(order_depth.buy_orders.items())
+        market_bids.sort(reverse=True)
+
+        best_bid, _ = max(market_bids)
+        if best_bid <= fair - penny_width:
+            # we can penny at best_bid + 1
+            bid_price = best_bid + 1
+        elif best_bid <= fair - join_width:
+            bid_price = best_bid
+        else:
+            bid_price = None
+
+        bid_vol = position_limit - (position + buy_order_volume)
+
+        if bid_price is not None and bid_vol > 0:
+            orders.append(Order(product, bid_price, bid_vol))
+            # update order depth to reflect our order
+            if bid_price in order_depth.buy_orders:
+                order_depth.buy_orders[bid_price] += bid_vol
+            else:
+                order_depth.buy_orders[bid_price] = bid_vol
+            buy_order_volume += bid_vol
+        
+        market_asks = list(order_depth.sell_orders.items())
+        market_asks.sort()
+
+        best_ask, _ = min(market_asks)
+        if best_ask >= fair + penny_width:
+            # we can penny at best_ask - 1
+            ask_price = best_ask - 1
+        elif best_ask >= fair + join_width:
+            ask_price = best_ask
+        else:
+            ask_price = None
+        
+        ask_vol = position - sell_order_volume - -position_limit
+        ask_vol = -ask_vol
+
+        if ask_price is not None and ask_vol > 0:
+            orders.append(Order(product, ask_price, ask_vol))
+            # update order depth to reflect our order
+            if ask_price in order_depth.sell_orders:
+                order_depth.sell_orders[ask_price] += ask_vol
+            else:
+                order_depth.sell_orders[ask_price] = ask_vol
+            sell_order_volume += ask_vol
+
+        # return [], buy_order_volume, sell_order_volume
+        return orders, buy_order_volume, sell_order_volume
+
     def calc_fair_kelp(self):
         pass
 
@@ -139,8 +225,9 @@ class Trader:
     def resin(self, order_depth: OrderDepth, position: int) -> list[Order]:
         take_orders, buy_order_volume, sell_order_volume = self.market_take(Product.RESIN, order_depth, 10000, 1, position, 20)
         clear_orders, buy_order_volume, sell_order_volume = self.clear_position(Product.RESIN, order_depth, 10000, position, buy_order_volume, sell_order_volume, 20)
+        make_orders, buy_order_volume, sell_order_volume = self.market_make(Product.RESIN, order_depth, 10000, position, buy_order_volume, sell_order_volume, 20)
 
-        return take_orders + clear_orders
+        return take_orders + clear_orders + make_orders
 
     def run(self, state: TradingState) -> dict[str, list[Order]]:
         self.timestamp = state.timestamp
