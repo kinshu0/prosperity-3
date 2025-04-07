@@ -3,6 +3,7 @@ from typing import List
 import string
 import jsonpickle
 import math
+from copy import deepcopy
 
 
 class Product:
@@ -20,16 +21,16 @@ PARAMS = {
         "default_edge": 4,
         "soft_position_limit": 10,
     },
-    Product.KELP: {
-        "take_width": 1,
-        "clear_width": 0,
-        "prevent_adverse": True,
-        "adverse_volume": 15,
-        "reversion_beta": -0.18172393033850867,
-        "disregard_edge": 1,
-        "join_edge": 0,
-        "default_edge": 1,
-    },
+    # Product.KELP: {
+    #     "take_width": 1,
+    #     "clear_width": 0,
+    #     "prevent_adverse": True,
+    #     "adverse_volume": 15,
+    #     "reversion_beta": -0.18172393033850867,
+    #     "disregard_edge": 1,
+    #     "join_edge": 0,
+    #     "default_edge": 1,
+    # },
 }
 
 
@@ -208,18 +209,44 @@ class Trader:
         buy_order_volume = 0
         sell_order_volume = 0
 
-        buy_order_volume, sell_order_volume = self.take_best_orders(
-            product,
-            fair_value,
-            take_width,
-            orders,
-            order_depth,
-            position,
-            buy_order_volume,
-            sell_order_volume,
-            prevent_adverse,
-            adverse_volume,
-        )
+        # buy_order_volume, sell_order_volume = self.take_best_orders(
+        #     product,
+        #     fair_value,
+        #     take_width,
+        #     orders,
+        #     order_depth,
+        #     position,
+        #     buy_order_volume,
+        #     sell_order_volume,
+        #     prevent_adverse,
+        #     adverse_volume,
+        # )
+        position_limit = self.LIMIT[product]
+        cur_position = position
+        
+        buy_order_volume = 0
+
+        # BUY STUFF
+        for ask, ask_amount in order_depth.sell_orders.items():
+            if int(ask) < fair_value and cur_position < position_limit:
+                order_amt = min(position_limit - cur_position, -ask_amount)
+                cur_position += order_amt
+                buy_order_volume += order_amt
+                print("TAKE BUY", str(-ask_amount) + "x", ask)
+                orders.append(Order(product, ask, -ask_amount))
+
+        cur_position = position
+        sell_order_volume = 0
+
+        # SELL stuff        
+        for bid, bid_amount in order_depth.buy_orders.items():
+            if int(bid) > fair_value and cur_position > -position_limit:
+                order_amt = max(-position_limit - cur_position, -bid_amount)
+                cur_position += order_amt
+                sell_order_volume += order_amt
+                print("TAKE SELL", str(-bid_amount) + "x", bid)
+                orders.append(Order(product, bid, -bid_amount))
+    
         return orders, buy_order_volume, sell_order_volume
 
     def clear_orders(
@@ -315,6 +342,7 @@ class Trader:
         result = {}
 
         if Product.RESIN in self.params and Product.RESIN in state.order_depths:
+            order_depth = deepcopy(state.order_depths[Product.RESIN])
             resin_position = (
                 state.position[Product.RESIN]
                 if Product.RESIN in state.position
@@ -323,7 +351,7 @@ class Trader:
             resin_take_orders, buy_order_volume, sell_order_volume = (
                 self.take_orders(
                     Product.RESIN,
-                    state.order_depths[Product.RESIN],
+                    order_depth,
                     self.params[Product.RESIN]["fair_value"],
                     self.params[Product.RESIN]["take_width"],
                     resin_position,
@@ -332,7 +360,7 @@ class Trader:
             resin_clear_orders, buy_order_volume, sell_order_volume = (
                 self.clear_orders(
                     Product.RESIN,
-                    state.order_depths[Product.RESIN],
+                    order_depth,
                     self.params[Product.RESIN]["fair_value"],
                     self.params[Product.RESIN]["clear_width"],
                     resin_position,
@@ -342,7 +370,7 @@ class Trader:
             )
             resin_make_orders, _, _ = self.make_orders(
                 Product.RESIN,
-                state.order_depths[Product.RESIN],
+                order_depth,
                 self.params[Product.RESIN]["fair_value"],
                 resin_position,
                 buy_order_volume,
@@ -354,7 +382,8 @@ class Trader:
                 self.params[Product.RESIN]["soft_position_limit"],
             )
             result[Product.RESIN] = (
-                resin_take_orders + resin_clear_orders + resin_make_orders
+                resin_take_orders + resin_make_orders
+                # resin_take_orders + resin_clear_orders + resin_make_orders
             )
 
         if Product.KELP in self.params and Product.KELP in state.order_depths:

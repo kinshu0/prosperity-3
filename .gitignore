@@ -1,13 +1,8 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
-
-# Virtual environments
+.qodo
 .venv
-
-
-.DS_Store
+backtests
+round1/__pycache__
+tutorial/__pycache__
+tutorial/backtests
+tutorial/logs
+uv.lock

@@ -3,11 +3,13 @@ from typing import List
 import string
 import jsonpickle
 import math
+from copy import deepcopy
 
 
 class Product:
     RESIN = "RAINFOREST_RESIN"
     KELP = "KELP"
+    SQUID_INK = "SQUID_INK"
 
 PARAMS = {
     Product.RESIN: {
@@ -24,12 +26,22 @@ PARAMS = {
         "take_width": 1,
         "clear_width": 0,
         "prevent_adverse": True,
-        "adverse_volume": 15,
+        "adverse_volume": 20,
         "reversion_beta": -0.18172393033850867,
         "disregard_edge": 1,
         "join_edge": 0,
         "default_edge": 1,
     },
+    #  Product.SQUID_INK: {
+    #     "take_width": 1,
+    #     "clear_width": 0,
+    #     "prevent_adverse": True,
+    #     "adverse_volume": 25,
+    #     "reversion_beta": -0.18172393033850867,
+    #     "disregard_edge": 1,
+    #     "join_edge": 0,
+    #     "default_edge": 1,
+    # },
 }
 
 
@@ -39,7 +51,7 @@ class Trader:
             params = PARAMS
         self.params = params
 
-        self.LIMIT = {Product.RESIN: 20, Product.KELP: 20}
+        self.LIMIT = {Product.RESIN: 50, Product.KELP: 50, Product.SQUID_INK: 50}
 
     def take_best_orders(
         self,
@@ -154,6 +166,45 @@ class Trader:
                 buy_order_volume += abs(sent_quantity)
 
         return buy_order_volume, sell_order_volume
+    
+    def squid_fair_value(self, order_depth: OrderDepth, traderObject) -> float:
+        if len(order_depth.sell_orders) != 0 and len(order_depth.buy_orders) != 0:
+            best_ask = min(order_depth.sell_orders.keys())
+            best_bid = max(order_depth.buy_orders.keys())
+            filtered_ask = [
+                price
+                for price in order_depth.sell_orders.keys()
+                if abs(order_depth.sell_orders[price])
+                >= self.params[Product.KELP]["adverse_volume"]
+            ]
+            filtered_bid = [
+                price
+                for price in order_depth.buy_orders.keys()
+                if abs(order_depth.buy_orders[price])
+                >= self.params[Product.KELP]["adverse_volume"]
+            ]
+            mm_ask = min(filtered_ask) if len(filtered_ask) > 0 else None
+            mm_bid = max(filtered_bid) if len(filtered_bid) > 0 else None
+            if mm_ask == None or mm_bid == None:
+                if traderObject.get("kelp_last_price", None) == None:
+                    mmmid_price = (best_ask + best_bid) / 2
+                else:
+                    mmmid_price = traderObject["kelp_last_price"]
+            else:
+                mmmid_price = (mm_ask + mm_bid) / 2
+
+            if traderObject.get("kelp_last_price", None) != None:
+                last_price = traderObject["kelp_last_price"]
+                last_returns = (mmmid_price - last_price) / last_price
+                pred_returns = (
+                    last_returns * self.params[Product.SQUID_INK]["reversion_beta"]
+                )
+                fair = mmmid_price + (mmmid_price * pred_returns)
+            else:
+                fair = mmmid_price
+            traderObject["kelp_last_price"] = mmmid_price
+            return fair
+        return None
 
     def kelp_fair_value(self, order_depth: OrderDepth, traderObject) -> float:
         if len(order_depth.sell_orders) != 0 and len(order_depth.buy_orders) != 0:
@@ -315,6 +366,7 @@ class Trader:
         result = {}
 
         if Product.RESIN in self.params and Product.RESIN in state.order_depths:
+            order_depth = deepcopy(state.order_depths[Product.RESIN])
             resin_position = (
                 state.position[Product.RESIN]
                 if Product.RESIN in state.position
@@ -323,7 +375,7 @@ class Trader:
             resin_take_orders, buy_order_volume, sell_order_volume = (
                 self.take_orders(
                     Product.RESIN,
-                    state.order_depths[Product.RESIN],
+                    order_depth,
                     self.params[Product.RESIN]["fair_value"],
                     self.params[Product.RESIN]["take_width"],
                     resin_position,
@@ -332,7 +384,7 @@ class Trader:
             resin_clear_orders, buy_order_volume, sell_order_volume = (
                 self.clear_orders(
                     Product.RESIN,
-                    state.order_depths[Product.RESIN],
+                    order_depth,
                     self.params[Product.RESIN]["fair_value"],
                     self.params[Product.RESIN]["clear_width"],
                     resin_position,
@@ -342,7 +394,7 @@ class Trader:
             )
             resin_make_orders, _, _ = self.make_orders(
                 Product.RESIN,
-                state.order_depths[Product.RESIN],
+                order_depth,
                 self.params[Product.RESIN]["fair_value"],
                 resin_position,
                 buy_order_volume,
@@ -354,6 +406,7 @@ class Trader:
                 self.params[Product.RESIN]["soft_position_limit"],
             )
             result[Product.RESIN] = (
+                # resin_take_orders + resin_clear_orders
                 resin_take_orders + resin_clear_orders + resin_make_orders
             )
 
@@ -401,6 +454,52 @@ class Trader:
             )
             result[Product.KELP] = (
                 kelp_take_orders + kelp_clear_orders + kelp_make_orders
+            )
+
+        if Product.SQUID_INK in self.params and Product.SQUID_INK in state.order_depths:
+            squid_position = (
+                state.position[Product.SQUID_INK]
+                if Product.SQUID_INK in state.position
+                else 0
+            )
+            squid_fair_value = self.squid_fair_value(
+                state.order_depths[Product.SQUID_INK], traderObject
+            )
+            squid_take_orders, buy_order_volume, sell_order_volume = (
+                self.take_orders(
+                    Product.SQUID_INK,
+                    state.order_depths[Product.SQUID_INK],
+                    squid_fair_value,
+                    self.params[Product.SQUID_INK]["take_width"],
+                    squid_position,
+                    self.params[Product.SQUID_INK]["prevent_adverse"],
+                    self.params[Product.SQUID_INK]["adverse_volume"],
+                )
+            )
+            squid_clear_orders, buy_order_volume, sell_order_volume = (
+                self.clear_orders(
+                    Product.SQUID_INK,
+                    state.order_depths[Product.SQUID_INK],
+                    squid_fair_value,
+                    self.params[Product.SQUID_INK]["clear_width"],
+                    squid_position,
+                    buy_order_volume,
+                    sell_order_volume,
+                )
+            )
+            squid_make_orders, _, _ = self.make_orders(
+                Product.SQUID_INK,
+                state.order_depths[Product.SQUID_INK],
+                squid_fair_value,
+                squid_position,
+                buy_order_volume,
+                sell_order_volume,
+                self.params[Product.SQUID_INK]["disregard_edge"],
+                self.params[Product.SQUID_INK]["join_edge"],
+                self.params[Product.SQUID_INK]["default_edge"],
+            )
+            result[Product.SQUID_INK] = (
+                squid_take_orders + squid_clear_orders + squid_make_orders
             )
 
         conversions = 1

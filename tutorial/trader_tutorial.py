@@ -1,0 +1,247 @@
+from datamodel import OrderDepth, UserId, TradingState, Order
+import string
+import jsonpickle
+from copy import deepcopy
+
+class Product:
+    KELP = 'KELP'
+    RESIN = 'RAINFOREST_RESIN'
+
+class Trader:
+
+    def market_take(self, product: str, order_depth: OrderDepth, fair: int | float, width: int | float, position: int, position_limit: int) -> tuple[list[Order], int, int]:
+        to_buy = position_limit - position
+        to_sell = position + position_limit
+
+        buy_orders = sorted(order_depth.buy_orders.items(), reverse=True)
+        sell_orders = sorted(order_depth.sell_orders.items())
+
+        own_orders = []
+        buy_order_volume = 0
+        sell_order_volume = 0
+
+        # max_buy_price = fair - width if position > self.limit * 0.5 else true_value
+        # min_sell_price = fair + 1 if position < self.limit * -0.5 else true_value
+        max_buy_price = fair - width
+        min_sell_price = fair + width
+
+
+        for price, volume in sell_orders:
+            if to_buy > 0 and price <= max_buy_price:
+                quantity = min(to_buy, -volume)
+                own_orders.append(Order(product, price, quantity))
+                to_buy -= quantity
+                # todo: do we need this
+                order_depth.sell_orders[price] += quantity
+                if order_depth.sell_orders[price] == 0:
+                    order_depth.sell_orders.pop(price)
+                buy_order_volume += quantity
+
+        # if to_buy > 0 and hard_liquidate:
+        #     quantity = to_buy // 2
+        #     self.buy(true_value, quantity)
+        #     to_buy -= quantity
+
+        # if to_buy > 0 and soft_liquidate:
+        #     quantity = to_buy // 2
+        #     self.buy(true_value - 2, quantity)
+        #     to_buy -= quantity
+
+        # if to_buy > 0:
+        #     popular_buy_price = max(buy_orders, key=lambda tup: tup[1])[0]
+        #     price = min(max_buy_price, popular_buy_price + 1)
+        #     self.buy(price, to_buy)
+
+        for price, volume in buy_orders:
+            if to_sell > 0 and price >= min_sell_price:
+                quantity = min(to_sell, volume)
+                own_orders.append(Order(product, price, -quantity))
+                to_sell -= quantity
+                order_depth.buy_orders[price] -= quantity
+                if order_depth.buy_orders[price] == 0:
+                    order_depth.buy_orders.pop(price)
+                sell_order_volume += quantity
+
+        # if to_sell > 0 and hard_liquidate:
+        #     quantity = to_sell // 2
+        #     self.sell(true_value, quantity)
+        #     to_sell -= quantity
+
+        # if to_sell > 0 and soft_liquidate:
+        #     quantity = to_sell // 2
+        #     self.sell(true_value + 2, quantity)
+        #     to_sell -= quantity
+
+        # if to_sell > 0:
+        #     popular_sell_price = min(sell_orders, key=lambda tup: tup[1])[0]
+        #     price = max(min_sell_price, popular_sell_price - 1)
+        #     self.sell(price, to_sell)
+
+        return own_orders, buy_order_volume, sell_order_volume
+
+    def clear_position(self, product: str, order_depth: OrderDepth, fair: float | int, position: int, buy_order_volume: int, sell_order_volume: int) -> list[Order]:
+        pos_after_take = position + buy_order_volume - sell_order_volume
+        sell_orders = []
+        buy_orders = []
+        sell_order_volume = 0
+        buy_order_volume = 0
+
+        clear_width = 0
+        
+        if pos_after_take > 0:
+            market_bids = list(order_depth.buy_orders.items())
+            market_bids.sort(reverse=True)
+            for bid_price, bid_volume in market_bids:
+                if pos_after_take <= 0:
+                    break
+                if bid_price >= fair + clear_width:
+                    sell_vol = min(bid_volume, pos_after_take)
+                    sell_order = Order(product, bid_price, -sell_vol)
+                    sell_orders.append(sell_order)
+                    pos_after_take -= sell_vol
+                    order_depth.buy_orders[bid_price] -= sell_vol
+                    if order_depth.buy_orders[bid_price] == 0:
+                        order_depth.buy_orders.pop(bid_price)
+                    sell_order_volume += sell_vol
+
+        elif pos_after_take < 0:
+            market_asks = list(order_depth.sell_orders.items())
+            market_asks.sort()
+            for ask_price, ask_volume in market_asks:
+                if pos_after_take >= 0:
+                    break
+                if ask_price <= fair - clear_width:
+                    buy_vol = min(-ask_volume, -pos_after_take)
+                    buy_order = Order(product, ask_price, buy_vol)
+                    buy_orders.append(buy_order)
+                    pos_after_take += buy_vol
+                    order_depth.sell_orders[ask_price] += buy_vol
+                    if order_depth.sell_orders[ask_price] == 0:
+                        order_depth.sell_orders.pop(ask_price)
+                    buy_order_volume += buy_vol
+
+        return buy_orders + sell_orders, buy_order_volume, sell_order_volume
+    
+    def make_orders(
+        self,
+        product,
+        order_depth: OrderDepth,
+        fair_value: float,
+        position: int,
+        buy_order_volume: int,
+        sell_order_volume: int,
+        disregard_edge: float,  # disregard trades within this edge for pennying or joining
+        join_edge: float,  # join trades within this edge
+        default_edge: float,  # default edge to request if there are no levels to penny or join
+        manage_position: bool = False,
+        soft_position_limit: int = 0,
+        # will penny all other levels with higher edge
+    ):
+        orders: list[Order] = []
+        asks_above_fair = [
+            price
+            for price in order_depth.sell_orders.keys()
+            if price > fair_value + disregard_edge
+        ]
+        bids_below_fair = [
+            price
+            for price in order_depth.buy_orders.keys()
+            if price < fair_value - disregard_edge
+        ]
+
+        best_ask_above_fair = min(asks_above_fair) if len(asks_above_fair) > 0 else None
+        best_bid_below_fair = max(bids_below_fair) if len(bids_below_fair) > 0 else None
+
+        ask = round(fair_value + default_edge)
+        if best_ask_above_fair != None:
+            if abs(best_ask_above_fair - fair_value) <= join_edge:
+                ask = best_ask_above_fair  # join
+            else:
+                ask = best_ask_above_fair - 1  # penny
+
+        bid = round(fair_value - default_edge)
+        if best_bid_below_fair != None:
+            if abs(fair_value - best_bid_below_fair) <= join_edge:
+                bid = best_bid_below_fair
+            else:
+                bid = best_bid_below_fair + 1
+
+        if manage_position:
+            if position > soft_position_limit:
+                ask -= 1
+            elif position < -1 * soft_position_limit:
+                bid += 1
+
+        buy_order_volume, sell_order_volume = self.market_make(
+            product,
+            orders,
+            bid,
+            ask,
+            position,
+            buy_order_volume,
+            sell_order_volume,
+        )
+
+        return orders, buy_order_volume, sell_order_volume
+    
+    def market_make(
+        self,
+        product: str,
+        orders: List[Order],
+        bid: int,
+        ask: int,
+        position: int,
+        buy_order_volume: int,
+        sell_order_volume: int,
+    ) -> (int, int):
+        buy_quantity = self.LIMIT[product] - (position + buy_order_volume)
+        if buy_quantity > 0:
+            orders.append(Order(product, round(bid), buy_quantity))  # Buy order
+
+        sell_quantity = self.LIMIT[product] + (position - sell_order_volume)
+        if sell_quantity > 0:
+            orders.append(Order(product, round(ask), -sell_quantity))  # Sell order
+        return buy_order_volume, sell_order_volume
+
+    def calc_fair_kelp(self):
+        pass
+
+    def kelp(self, order_depth: OrderDepth, position: int) -> list[Order]:
+        return []
+
+    def resin(self, order_depth: OrderDepth, position: int) -> list[Order]:
+        take_orders, buy_order_volume, sell_order_volume = self.market_take(Product.RESIN, order_depth, 10000, 1, position, 20)
+        clear_orders, buy_order_volume, sell_order_volume = self.clear_position(Product.RESIN, order_depth, 10000, position, buy_order_volume, sell_order_volume)
+        make_orders, buy_order_volume, sell_order_volume = self.market_take(Product.RESIN, order_depth, 10000, 1, position, 20)
+
+        return take_orders + clear_orders + make_orders
+
+    def run(self, state: TradingState) -> dict[str, list[Order]]:
+        self.timestamp = state.timestamp
+        order_depth = state.order_depths
+        traderData = state.traderData
+
+
+        result = {}
+
+        for product in order_depth:
+            position = state.position.get(product, 0)
+            order_depth = deepcopy(state.order_depths[product])
+
+            if order_depth is None:
+                continue
+
+            if product == Product.RESIN:
+                # print(f'Timestamp: {self.timestamp}')
+                # print(f'Market bids: {order_depth.buy_orders}')
+                # print(f'Market asks: {order_depth.sell_orders}')
+                orders = self.resin(order_depth, position)
+                # print(f'Resin orders: {orders}')
+
+            elif product == Product.KELP:
+                orders = self.kelp(order_depth, position)
+
+            result[product] = orders
+        
+        conversions = 1
+        return result, conversions, traderData
