@@ -114,116 +114,124 @@ class Trader:
         sell_order_volume += ask_vol   
         
         return orders, buy_order_volume, sell_order_volume
-
-    # def fair_kelp(self, order_depth: OrderDepth, trader_data: dict) -> float:
-    #     if len(order_depth.sell_orders) != 0 and len(order_depth.buy_orders) != 0:
-    #         best_ask = min(order_depth.sell_orders.keys())
-    #         best_bid = max(order_depth.buy_orders.keys())
-
-    #         adverse_volume = 15
-    #         reversion_beta = -0.18172393033850867
-
-    #         filtered_ask = [
-    #             price
-    #             for price in order_depth.sell_orders.keys()
-    #             if abs(order_depth.sell_orders[price])
-    #             >= adverse_volume
-    #         ]
-    #         filtered_bid = [
-    #             price
-    #             for price in order_depth.buy_orders.keys()
-    #             if abs(order_depth.buy_orders[price])
-    #             >= adverse_volume
-    #         ]
-
-    #         mm_ask = min(filtered_ask) if len(filtered_ask) > 0 else None
-    #         mm_bid = max(filtered_bid) if len(filtered_bid) > 0 else None
-    #         if mm_ask == None or mm_bid == None:
-    #             if trader_data.get("kelp_last_price", None) == None:
-    #                 mmmid_price = (best_ask + best_bid) / 2
-    #             else:
-    #                 mmmid_price = trader_data["kelp_last_price"]
-    #         else:
-    #             mmmid_price = (mm_ask + mm_bid) / 2
-
-    #         if trader_data.get("kelp_last_price", None) != None:
-    #             last_price = trader_data["kelp_last_price"]
-    #             last_returns = (mmmid_price - last_price) / last_price
-    #             pred_returns = (
-    #                 last_returns * reversion_beta
-    #             )
-    #             fair = mmmid_price + (mmmid_price * pred_returns)
-    #         else:
-    #             fair = mmmid_price
-    #         trader_data["kelp_last_price"] = mmmid_price
-    #         return fair
-    #     return None
     
-    def fair_kelp(self, order_depth: OrderDepth, trader_data: dict) -> float:
-        if len(order_depth.sell_orders) != 0 and len(order_depth.buy_orders) != 0:
-            best_ask = min(order_depth.sell_orders.keys())
-            best_bid = max(order_depth.buy_orders.keys())
-
-            fair = (best_ask + best_bid) / 2
-            return fair
-        return None
-    
-    # def fair_ink(self, order_depth: OrderDepth, trader_data: dict) -> float:
-    #     if len(order_depth.sell_orders) != 0 and len(order_depth.buy_orders) != 0:
-    #         best_ask = min(order_depth.sell_orders.keys())
-    #         best_bid = max(order_depth.buy_orders.keys())
-
-    #         fair = (best_ask + best_bid) / 2
-    #         return fair
-    #     return None
-    
-    def fair_ink(self, order_depth: OrderDepth, trader_data: dict) -> float:
-        ink_history = trader_data.get('ink_history', [])
-
-        if len(order_depth.sell_orders) != 0 and len(order_depth.buy_orders) != 0:
-            best_ask = min(order_depth.sell_orders.keys())
-            best_bid = max(order_depth.buy_orders.keys())
-
-            mid = (best_ask + best_bid) / 2
-            
-        # todo: shouldn't be using currrent mid for comparison against rolling mean past
-        ink_history.append(mid)
-
-        if len(ink_history) > 10:
-            ink_history.pop(0)
-        trader_data['ink_history'] = ink_history
-
-        return sum(ink_history) / len(ink_history)
-
-    def kelp(self, order_depth: OrderDepth, position: int, trader_data: dict) -> list[Order]:
-        kelp_fair = self.fair_kelp(order_depth, trader_data)
-        take_width = 1
-        make_width = 2
-        kelp_position_limit = 50
-        take_orders, buy_order_volume, sell_order_volume = self.market_take(Product.KELP, order_depth, kelp_fair, take_width, position, kelp_position_limit)
-        clear_orders, buy_order_volume, sell_order_volume = self.clear_position(Product.KELP, order_depth, kelp_fair, position, buy_order_volume, sell_order_volume, kelp_position_limit)
-        make_orders, buy_order_volume, sell_order_volume = self.market_make(Product.KELP, order_depth, kelp_fair, make_width, position, buy_order_volume, sell_order_volume, kelp_position_limit)
-
-        return take_orders + clear_orders + make_orders
-
     def resin(self, order_depth: OrderDepth, position: int) -> list[Order]:
         take_width = 1
         make_width = 1
         resin_fair = 10000
         resin_position_limit = 50
-        take_orders, buy_order_volume, sell_order_volume = self.market_take(Product.RESIN, order_depth, resin_fair, take_width, position, resin_position_limit)
-        clear_orders, buy_order_volume, sell_order_volume = self.clear_position(Product.RESIN, order_depth, resin_fair, position, buy_order_volume, sell_order_volume, resin_position_limit)
+        
+        mut_od = deepcopy(order_depth)
+        take_orders, buy_order_volume, sell_order_volume = self.market_take(Product.RESIN, mut_od, resin_fair, take_width, position, resin_position_limit)
+        clear_orders, buy_order_volume, sell_order_volume = self.clear_position(Product.RESIN, mut_od, resin_fair, position, buy_order_volume, sell_order_volume, resin_position_limit)
         make_orders, buy_order_volume, sell_order_volume = self.market_make(Product.RESIN, order_depth, resin_fair, make_width, position, buy_order_volume, sell_order_volume, resin_position_limit)
 
         return take_orders + clear_orders + make_orders
+
+    def mm_mid(self, product: str, order_depth: OrderDepth, trader_data: dict) -> float:
+        if len(order_depth.sell_orders) != 0 and len(order_depth.buy_orders) != 0:
+            best_ask = min(order_depth.sell_orders.keys())
+            best_bid = max(order_depth.buy_orders.keys())
+
+            adverse_volume = 15
+            # reversion_beta = -0.18172393033850867
+            reversion_beta = 0
+
+            filtered_ask = [
+                price
+                for price in order_depth.sell_orders.keys()
+                if abs(order_depth.sell_orders[price])
+                >= adverse_volume
+            ]
+            filtered_bid = [
+                price
+                for price in order_depth.buy_orders.keys()
+                if abs(order_depth.buy_orders[price])
+                >= adverse_volume
+            ]
+
+            mm_ask = min(filtered_ask) if len(filtered_ask) > 0 else None
+            mm_bid = max(filtered_bid) if len(filtered_bid) > 0 else None
+            if mm_ask == None or mm_bid == None:
+                if trader_data.get(f"{product}_last_price", None) == None:
+                    mmmid_price = (best_ask + best_bid) / 2
+                else:
+                    mmmid_price = trader_data[f"{product}_last_price"]
+            else:
+                mmmid_price = (mm_ask + mm_bid) / 2
+
+            if trader_data.get(f"{product}_last_price", None) != None:
+                last_price = trader_data[f"{product}_last_price"]
+                last_returns = (mmmid_price - last_price) / last_price
+                pred_returns = (
+                    last_returns * reversion_beta
+                )
+                fair = mmmid_price + (mmmid_price * pred_returns)
+            else:
+                fair = mmmid_price
+            trader_data[f"{product}_last_price"] = mmmid_price
+            return fair
+        return None
+
+    def mid_price(self, order_depth: OrderDepth) -> float:
+        if len(order_depth.sell_orders) != 0 and len(order_depth.buy_orders) != 0:
+            best_ask = min(order_depth.sell_orders.keys())
+            best_bid = max(order_depth.buy_orders.keys())
+
+            mid = (best_ask + best_bid) / 2
+            return mid
+        return None
+    
+    def rolling_mean(self, product: str, order_depth: OrderDepth, trader_data: dict) -> float:
+        ink_history = trader_data.get(f'{product}_history', [])
+
+        curr_mid = self.mid_price(order_depth)
+            
+        # todo: shouldn't be using currrent mid for comparison against rolling mean past
+        ink_history.append(curr_mid)
+
+        if len(ink_history) > 10:
+            ink_history.pop(0)
+        trader_data[f'{product}_history'] = ink_history
+
+        return sum(ink_history) / len(ink_history)
+
+    def kelp(self, order_depth: OrderDepth, position: int, trader_data: dict) -> list[Order]:
+        mid_price = self.mid_price(order_depth)
+        rolling_mean_price = self.rolling_mean(Product.KELP, order_depth, trader_data)
+        mm_mid = self.mm_mid(Product.KELP, order_depth, trader_data)
+        
+        # kelp_fair = mid_price
+        # kelp_fair = rolling_mean_price
+        kelp_fair = mm_mid
+        take_width = 1
+        make_width = 2
+        kelp_position_limit = 50
+
+        mut_od = deepcopy(order_depth)
+        take_orders, buy_order_volume, sell_order_volume = self.market_take(Product.KELP, mut_od, kelp_fair, take_width, position, kelp_position_limit)
+        clear_orders, buy_order_volume, sell_order_volume = self.clear_position(Product.KELP, mut_od, kelp_fair, position, buy_order_volume, sell_order_volume, kelp_position_limit)
+        make_orders, buy_order_volume, sell_order_volume = self.market_make(Product.KELP, order_depth, kelp_fair, make_width, position, buy_order_volume, sell_order_volume, kelp_position_limit)
+
+        return take_orders + clear_orders + make_orders
+
     
     def ink(self, order_depth: OrderDepth, position: int, trader_data: dict) -> list[Order]:
-        ink_fair = self.fair_ink(order_depth, trader_data)
+        mid_price = self.mid_price(order_depth)
+        rolling_mean_price = self.rolling_mean(Product.INK, order_depth, trader_data)
+        mm_mid = self.mm_mid(Product.INK, order_depth, trader_data)
+
+        # ink_fair = mid_price
+        # ink_fair = rolling_mean_price
+        ink_fair = mm_mid
+
         take_width = 1
         make_width = 1
         ink_position_limit = 50
-        take_orders, buy_order_volume, sell_order_volume = self.market_take(Product.INK, order_depth, ink_fair, take_width, position, ink_position_limit)
-        clear_orders, buy_order_volume, sell_order_volume = self.clear_position(Product.INK, order_depth, ink_fair, position, buy_order_volume, sell_order_volume, ink_position_limit)
+
+        mut_od = deepcopy(order_depth)
+        take_orders, buy_order_volume, sell_order_volume = self.market_take(Product.INK, mut_od, ink_fair, take_width, position, ink_position_limit)
+        clear_orders, buy_order_volume, sell_order_volume = self.clear_position(Product.INK, mut_od, ink_fair, position, buy_order_volume, sell_order_volume, ink_position_limit)
         make_orders, buy_order_volume, sell_order_volume = self.market_make(Product.INK, order_depth, ink_fair, make_width, position, buy_order_volume, sell_order_volume, ink_position_limit)
 
         return take_orders + clear_orders + make_orders
@@ -240,9 +248,12 @@ class Trader:
         else:
             trader_data = jsonpickle.decode(traderData)
 
+        # for product in [Product.INK,]:
         for product in order_depth:
             position = state.position.get(product, 0)
-            order_depth = deepcopy(state.order_depths[product])
+            order_depth = state.order_depths[product]
+
+            orders = []
 
             if order_depth is None:
                 continue
