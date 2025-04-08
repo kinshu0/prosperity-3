@@ -134,8 +134,8 @@ class KelpStrategy(MarketMakingStrategy):
 class Trader:
     def __init__(self) -> None:
         limits = {
-            "RAINFOREST_RESIN": 20,
-            "KELP": 20,
+            "RAINFOREST_RESIN": 50,
+            "KELP": 50,
         }
 
         self.strategies = {symbol: clazz(symbol, limits[symbol]) for symbol, clazz in {
