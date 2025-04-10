@@ -9,7 +9,15 @@ class Product:
     RESIN = 'RAINFOREST_RESIN'
     INK = 'SQUID_INK'
 
+PARAMS = {
+    'ink_change_threshold_pct': 0.02,
+    'ink_window_size': 10
+}
+
 class Trader:
+    def __init__(self, params: dict = None):
+        if params is None:
+            self.params = PARAMS
 
     def market_take(self, product: str, order_depth: OrderDepth, fair: int | float, width: int | float, position: int, position_limit: int) -> tuple[list[Order], int, int]:
         to_buy = position_limit - position
@@ -234,7 +242,7 @@ class Trader:
         od = deepcopy(order_depth)
 
         momentum_factor = 5
-        ink_price_hist_window = 10
+        ink_window_size = self.params['ink_window_size']
         minimum_thresh = 2
         position_limit = 50
 
@@ -252,9 +260,9 @@ class Trader:
         delta_pct = curr_mid / mean_price - 1
 
         '''Swing Reversion'''
-        # todo: make change threshold a percent change instead
         change_threshold = 5
         change_threshold_pct = 0.02
+        change_threshold_pct = self.params['ink_change_threshold_pct']
 
         # big change up
         if delta_pct >= change_threshold_pct:
@@ -273,7 +281,7 @@ class Trader:
         '''Update ink price history'''
         ink_price_hist.append(curr_mid)
 
-        if len(ink_price_hist) > ink_price_hist_window:
+        if len(ink_price_hist) > ink_window_size:
             ink_price_hist.pop(0)
 
         trader_data['ink_price_hist'] = ink_price_hist
