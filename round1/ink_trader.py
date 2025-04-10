@@ -230,6 +230,9 @@ class Trader:
 
     def ink(self, order_depth: OrderDepth, position: int, trader_data: dict) -> list[Order]:
         
+        # todo: find the best parameters here
+        # todo: instead of using fixed momentum_thresh, use standard deviation of ink_price_hist x constank factor as momentum_thresh
+
         momentum_thresh = 5
         ink_price_hist_window = 10
 
@@ -251,7 +254,7 @@ class Trader:
             # sell
             orders = self.take_sell(Product.INK, order_depth, 999999, 0, position, 50)
         
-        # within bounds
+        # within bounds and we don't expect to break ub or lb
         # todo: just market make / take on both directions
         
         # update ink_price_hist
