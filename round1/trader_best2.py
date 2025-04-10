@@ -3,7 +3,7 @@ from typing import List
 import string
 import jsonpickle
 import math
-
+from copy import deepcopy
 
 class Product:
     RESIN = "RAINFOREST_RESIN"
@@ -370,10 +370,11 @@ class Trader:
                 if Product.RESIN in state.position
                 else 0
             )
+            od = deepcopy(state.order_depths[Product.RESIN])
             resin_take_orders, buy_order_volume, sell_order_volume = (
                 self.take_orders(
                     Product.RESIN,
-                    state.order_depths[Product.RESIN],
+                    od,
                     self.params[Product.RESIN]["fair_value"],
                     self.params[Product.RESIN]["take_width"],
                     resin_position,
@@ -382,7 +383,7 @@ class Trader:
             resin_clear_orders, buy_order_volume, sell_order_volume = (
                 self.clear_orders(
                     Product.RESIN,
-                    state.order_depths[Product.RESIN],
+                    od,
                     self.params[Product.RESIN]["fair_value"],
                     self.params[Product.RESIN]["clear_width"],
                     resin_position,
@@ -392,7 +393,7 @@ class Trader:
             )
             resin_make_orders, _, _ = self.make_orders(
                 Product.RESIN,
-                state.order_depths[Product.RESIN],
+                od,
                 self.params[Product.RESIN]["fair_value"],
                 resin_position,
                 buy_order_volume,
@@ -416,10 +417,11 @@ class Trader:
             kelp_fair_value = self.kelp_fair_value(
                 state.order_depths[Product.KELP], traderObject
             )
+            od = deepcopy(state.order_depths[Product.KELP])
             kelp_take_orders, buy_order_volume, sell_order_volume = (
                 self.take_orders(
                     Product.KELP,
-                    state.order_depths[Product.KELP],
+                    od,
                     kelp_fair_value,
                     self.params[Product.KELP]["take_width"],
                     kelp_position,
@@ -430,7 +432,7 @@ class Trader:
             kelp_clear_orders, buy_order_volume, sell_order_volume = (
                 self.clear_orders(
                     Product.KELP,
-                    state.order_depths[Product.KELP],
+                    od,
                     kelp_fair_value,
                     self.params[Product.KELP]["clear_width"],
                     kelp_position,
@@ -440,7 +442,7 @@ class Trader:
             )
             kelp_make_orders, _, _ = self.make_orders(
                 Product.KELP,
-                state.order_depths[Product.KELP],
+                od,
                 kelp_fair_value,
                 kelp_position,
                 buy_order_volume,
@@ -462,10 +464,11 @@ class Trader:
             ink_fair_value = self.ink_fair_value(
                 state.order_depths[Product.INK], traderObject
             )
+            od = deepcopy(state.order_depths[Product.INK])
             ink_take_orders, buy_order_volume, sell_order_volume = (
                 self.take_orders(
                     Product.INK,
-                    state.order_depths[Product.INK],
+                    od,
                     ink_fair_value,
                     self.params[Product.INK]["take_width"],
                     ink_position,
@@ -476,7 +479,7 @@ class Trader:
             ink_clear_orders, buy_order_volume, sell_order_volume = (
                 self.clear_orders(
                     Product.INK,
-                    state.order_depths[Product.INK],
+                    od,
                     ink_fair_value,
                     self.params[Product.INK]["clear_width"],
                     ink_position,
@@ -486,7 +489,7 @@ class Trader:
             )
             ink_make_orders, _, _ = self.make_orders(
                 Product.INK,
-                state.order_depths[Product.INK],
+                od,
                 ink_fair_value,
                 ink_position,
                 buy_order_volume,
