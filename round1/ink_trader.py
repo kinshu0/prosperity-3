@@ -161,13 +161,11 @@ class Trader:
         return None
 
     def mid_price(self, order_depth: OrderDepth) -> float:
-        if len(order_depth.sell_orders) != 0 and len(order_depth.buy_orders) != 0:
-            best_ask = min(order_depth.sell_orders.keys())
-            best_bid = max(order_depth.buy_orders.keys())
+        best_ask = min(order_depth.sell_orders.keys())
+        best_bid = max(order_depth.buy_orders.keys())
 
-            mid = (best_ask + best_bid) / 2
-            return mid
-        return None
+        mid = (best_ask + best_bid) / 2
+        return mid
     
     def rolling_mean(self, product: str, order_depth: OrderDepth, trader_data: dict) -> float:
         ink_history = trader_data.get(f'{product}_history', [])
@@ -233,31 +231,46 @@ class Trader:
         # todo: find the best parameters here
         # todo: instead of using fixed momentum_thresh, use standard deviation of ink_price_hist x constank factor as momentum_thresh
 
-        momentum_thresh = 5
+        od = deepcopy(order_depth)
+
+        momentum_factor = 5
         ink_price_hist_window = 10
+        minimum_thresh = 2
+        position_limit = 50
+
+        ###########################################
 
         curr_mid = self.mid_price(order_depth)
         
         ink_price_hist: list = trader_data.get('ink_price_hist', [])
-
-        last_mean = sum(ink_price_hist) / len(ink_price_hist) if ink_price_hist else curr_mid
+        mean_price = sum(ink_price_hist) / len(ink_price_hist) if ink_price_hist else curr_mid
+        std = (sum((x - mean_price) ** 2 for x in ink_price_hist) / len(ink_price_hist)) ** (1/2) if ink_price_hist else 1
 
         orders = []
 
-        # breaking ub
-        if curr_mid >= last_mean + momentum_thresh:
-            # buy
-            orders = self.take_buy(Product.INK, order_depth, 999999, 0, position, 50)
+        delta = curr_mid - mean_price
+        delta_pct = curr_mid / mean_price - 1
 
-        # breaking lb
-        if curr_mid <= last_mean + momentum_thresh:
+        '''Swing Reversion'''
+        # todo: make change threshold a percent change instead
+        change_threshold = 5
+        change_threshold_pct = 0.02
+
+        # big change up
+        if delta_pct >= change_threshold_pct:
             # sell
-            orders = self.take_sell(Product.INK, order_depth, 999999, 0, position, 50)
-        
+            orders = self.take_sell(Product.INK, od, 999999, 0, position, position_limit)
+
+        # big change down
+        elif delta_pct <= -change_threshold_pct:
+            # buy
+            orders = self.take_buy(Product.INK, od, 999999, 0, position, position_limit)
+
+
         # within bounds and we don't expect to break ub or lb
         # todo: just market make / take on both directions
         
-        # update ink_price_hist
+        '''Update ink price history'''
         ink_price_hist.append(curr_mid)
 
         if len(ink_price_hist) > ink_price_hist_window:
