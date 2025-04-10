@@ -18,6 +18,7 @@ class Trader:
     def __init__(self, params: dict = None):
         if params is None:
             self.params = PARAMS
+        self.params = params
 
     def market_take(self, product: str, order_depth: OrderDepth, fair: int | float, width: int | float, position: int, position_limit: int) -> tuple[list[Order], int, int]:
         to_buy = position_limit - position
