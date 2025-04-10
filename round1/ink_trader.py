@@ -11,14 +11,15 @@ class Product:
 
 PARAMS = {
     'ink_change_threshold_pct': 0.02,
-    'ink_window_size': 10
+    'ink_window_size': 10,
+    'ink_position_limit': 50,
 }
 
 class Trader:
     def __init__(self, params: dict = None):
+        self.params = params
         if params is None:
             self.params = PARAMS
-        self.params = params
 
     def market_take(self, product: str, order_depth: OrderDepth, fair: int | float, width: int | float, position: int, position_limit: int) -> tuple[list[Order], int, int]:
         to_buy = position_limit - position
@@ -190,15 +191,14 @@ class Trader:
 
         return sum(ink_history) / len(ink_history)
     
-    def take_buy(self, product: str, order_depth: OrderDepth, fair: int | float, width: int | float, position: int, position_limit: int) -> tuple[list[Order], int, int]:
+    def limit_buy(self, product: str, order_depth: OrderDepth, limit_price: int | float, position: int, position_limit: int) -> tuple[list[Order], int, int]:
         to_buy = position_limit - position
         market_sell_orders = sorted(order_depth.sell_orders.items())
-        fair, _ = market_sell_orders[0]
 
         own_orders = []
         buy_order_volume = 0
 
-        max_buy_price = fair - width
+        max_buy_price = limit_price
 
         for price, volume in market_sell_orders:
             if to_buy > 0 and price <= max_buy_price:
@@ -212,16 +212,15 @@ class Trader:
 
         return own_orders
     
-    def take_sell(self, product: str, order_depth: OrderDepth, fair: int | float, width: int | float, position: int, position_limit: int) -> tuple[list[Order], int, int]:
+    def limit_sell(self, product: str, order_depth: OrderDepth, limit_price: int | float, position: int, position_limit: int) -> tuple[list[Order], int, int]:
         to_sell = position - -position_limit
 
         market_buy_orders = sorted(order_depth.buy_orders.items(), reverse=True)
-        fair, _ = market_buy_orders[0]
 
         own_orders = []
         sell_order_volume = 0
 
-        min_sell_price = fair + width
+        min_sell_price = limit_price
 
         for price, volume in market_buy_orders:
             if to_sell > 0 and price >= min_sell_price:
@@ -236,18 +235,13 @@ class Trader:
         return own_orders
 
     def ink(self, order_depth: OrderDepth, position: int, trader_data: dict) -> list[Order]:
-        
-        # todo: find the best parameters here
-        # todo: instead of using fixed momentum_thresh, use standard deviation of ink_price_hist x constank factor as momentum_thresh
-
         od = deepcopy(order_depth)
+        best_market_ask = min(order_depth.sell_orders.keys())
+        best_market_bid = max(order_depth.buy_orders.keys())
 
-        momentum_factor = 5
         ink_window_size = self.params['ink_window_size']
-        minimum_thresh = 2
-        position_limit = 50
-
-        ###########################################
+        change_threshold_pct = self.params['ink_change_threshold_pct']
+        position_limit = self.params['ink_position_limit']
 
         curr_mid = self.mid_price(order_depth)
         
@@ -255,35 +249,40 @@ class Trader:
         mean_price = sum(ink_price_hist) / len(ink_price_hist) if ink_price_hist else curr_mid
         std = (sum((x - mean_price) ** 2 for x in ink_price_hist) / len(ink_price_hist)) ** (1/2) if ink_price_hist else 1
 
+        # ink_trigger_hist: list = trader_data.get('ink_trigger_hist', [0] * ink_window_size)
+
         orders = []
 
-        delta = curr_mid - mean_price
         delta_pct = curr_mid / mean_price - 1
 
-        '''Swing Reversion'''
-        change_threshold = 5
-        change_threshold_pct = 0.02
-        change_threshold_pct = self.params['ink_change_threshold_pct']
+        threshold_triggered = False
 
         # big change up
         if delta_pct >= change_threshold_pct:
             # sell
-            orders = self.take_sell(Product.INK, od, 999999, 0, position, position_limit)
+            orders = self.limit_sell(Product.INK, od, best_market_bid, position, position_limit)
+            threshold_triggered = True
 
         # big change down
         elif delta_pct <= -change_threshold_pct:
             # buy
-            orders = self.take_buy(Product.INK, od, 999999, 0, position, position_limit)
-
+            orders = self.limit_buy(Product.INK, od, best_market_ask, position, position_limit)
+            threshold_triggered = True
 
         # within bounds and we don't expect to break ub or lb
         # todo: just market make / take on both directions
         
         '''Update ink price history'''
-        ink_price_hist.append(curr_mid)
+        if not threshold_triggered:
+            ink_price_hist.append(curr_mid)
+
+        # ink_trigger_hist.append(1 if threshold_triggered else 0)
 
         if len(ink_price_hist) > ink_window_size:
             ink_price_hist.pop(0)
+
+        # if len(ink_trigger_hist) > ink_window_size:
+        #     ink_trigger_hist.pop(0)
 
         trader_data['ink_price_hist'] = ink_price_hist
 
