@@ -32,15 +32,11 @@ PARAMS = {
         "default_edge": 1,
     },
     Product.INK: {
-        "take_width": 1,
-        "clear_width": 0,
-        "prevent_adverse": True,
-        "adverse_volume": 15,
-        "reversion_beta": 0,
-        "disregard_edge": 1,
-        "join_edge": 0,
-        "default_edge": 1,
-    },
+        'ink_change_threshold_pct': 0.015,
+        'ink_window_size': 25,
+        'ink_position_limit': 50,
+        'clear_price_thresh': 0.0
+    }
 }
 
 
@@ -356,6 +352,125 @@ class Trader:
         )
 
         return orders, buy_order_volume, sell_order_volume
+    
+    def mid_price(self, order_depth: OrderDepth) -> float:
+        best_ask = min(order_depth.sell_orders.keys())
+        best_bid = max(order_depth.buy_orders.keys())
+
+        mid = (best_ask + best_bid) / 2
+        return mid
+
+    def limit_buy(self, product: str, order_depth: OrderDepth, limit_price: int | float, position: int, position_limit: int) -> tuple[list[Order], int, int]:
+        to_buy = position_limit - position
+        market_sell_orders = sorted(order_depth.sell_orders.items())
+
+        own_orders = []
+        buy_order_volume = 0
+
+        max_buy_price = limit_price
+
+        for price, volume in market_sell_orders:
+            if to_buy > 0 and price <= max_buy_price:
+                quantity = min(to_buy, -volume)
+                own_orders.append(Order(product, price, quantity))
+                to_buy -= quantity
+                order_depth.sell_orders[price] += quantity
+                if order_depth.sell_orders[price] == 0:
+                    order_depth.sell_orders.pop(price)
+                buy_order_volume += quantity
+
+        return own_orders
+    
+    
+    def limit_sell(self, product: str, order_depth: OrderDepth, limit_price: int | float, position: int, position_limit: int) -> tuple[list[Order], int, int]:
+        to_sell = position - -position_limit
+
+        market_buy_orders = sorted(order_depth.buy_orders.items(), reverse=True)
+
+        own_orders = []
+        sell_order_volume = 0
+
+        min_sell_price = limit_price
+
+        for price, volume in market_buy_orders:
+            if to_sell > 0 and price >= min_sell_price:
+                quantity = min(to_sell, volume)
+                own_orders.append(Order(product, price, -quantity))
+                to_sell -= quantity
+                order_depth.buy_orders[price] -= quantity
+                if order_depth.buy_orders[price] == 0:
+                    order_depth.buy_orders.pop(price)
+                sell_order_volume += quantity
+
+        return own_orders
+    
+    def ink(self, order_depth: OrderDepth, position: int, trader_data: dict) -> list[Order]:
+        od = deepcopy(order_depth)
+        best_market_ask = min(order_depth.sell_orders.keys())
+        best_market_bid = max(order_depth.buy_orders.keys())
+
+        ink_window_size = self.params[Product.INK]['ink_window_size']
+        change_threshold_pct = self.params[Product.INK]['ink_change_threshold_pct']
+        position_limit = self.params[Product.INK]['ink_position_limit']
+        clear_price_thresh = self.params[Product.INK]['clear_price_thresh']
+
+        curr_mid = self.mid_price(order_depth)
+        
+        ink_price_hist: list = trader_data.get('ink_price_hist', [])
+        mean_price = sum(ink_price_hist) / len(ink_price_hist) if ink_price_hist else curr_mid
+        std = (sum((x - mean_price) ** 2 for x in ink_price_hist) / len(ink_price_hist)) ** (1/2) if ink_price_hist else 1
+
+        ink_trigger_hist: list = trader_data.get('ink_trigger_hist', [0] * ink_window_size)
+
+        position_hist: list = trader_data.get('ink_position_hist', [])
+        position_hist.append(position)
+        if len(position_hist) > ink_window_size:
+            position_hist.pop(0)
+
+        orders = []
+
+        delta_pct = curr_mid / mean_price - 1
+
+        threshold_triggered = False
+
+        # big change up
+        if delta_pct >= change_threshold_pct:
+            # sell
+            orders = self.limit_sell(Product.INK, od, best_market_bid, position, position_limit)
+            threshold_triggered = True
+
+        # big change down
+        elif delta_pct <= -change_threshold_pct:
+            # buy
+            orders = self.limit_buy(Product.INK, od, best_market_ask, position, position_limit)
+            threshold_triggered = True
+
+        if ink_trigger_hist[-1] == 1 and not threshold_triggered:
+            # neutralize position
+            if position > 0:
+                orders = self.limit_sell(Product.INK, od, mean_price - clear_price_thresh, position, 0)
+                # orders = self.limit_sell(Product.INK, od, best_market_bid, position, 0)
+            elif position < 0:
+                orders = self.limit_buy(Product.INK, od, mean_price + clear_price_thresh, position, 0)
+                # orders = self.limit_buy(Product.INK, od, best_market_ask, position, 0)
+        
+        '''Update ink price history'''
+        if not threshold_triggered:
+            ink_price_hist.append(curr_mid)
+
+        ink_trigger_hist.append(1 if threshold_triggered else 0)
+
+        if len(ink_price_hist) > ink_window_size:
+            ink_price_hist.pop(0)
+
+        if len(ink_trigger_hist) > ink_window_size:
+            ink_trigger_hist.pop(0)
+
+        trader_data['ink_price_hist'] = ink_price_hist
+        trader_data['ink_trigger_hist'] = ink_trigger_hist
+        trader_data['ink_position_hist'] = position_hist
+
+        return orders
 
     def run(self, state: TradingState):
         traderObject = {}
@@ -456,51 +571,18 @@ class Trader:
             )
 
         if Product.INK in self.params and Product.INK in state.order_depths:
+
             ink_position = (
                 state.position[Product.INK]
                 if Product.INK in state.position
                 else 0
             )
-            ink_fair_value = self.ink_fair_value(
-                state.order_depths[Product.INK], traderObject
-            )
+
             od = deepcopy(state.order_depths[Product.INK])
-            ink_take_orders, buy_order_volume, sell_order_volume = (
-                self.take_orders(
-                    Product.INK,
-                    od,
-                    ink_fair_value,
-                    self.params[Product.INK]["take_width"],
-                    ink_position,
-                    self.params[Product.INK]["prevent_adverse"],
-                    self.params[Product.INK]["adverse_volume"],
-                )
-            )
-            ink_clear_orders, buy_order_volume, sell_order_volume = (
-                self.clear_orders(
-                    Product.INK,
-                    od,
-                    ink_fair_value,
-                    self.params[Product.INK]["clear_width"],
-                    ink_position,
-                    buy_order_volume,
-                    sell_order_volume,
-                )
-            )
-            ink_make_orders, _, _ = self.make_orders(
-                Product.INK,
-                od,
-                ink_fair_value,
-                ink_position,
-                buy_order_volume,
-                sell_order_volume,
-                self.params[Product.INK]["disregard_edge"],
-                self.params[Product.INK]["join_edge"],
-                self.params[Product.INK]["default_edge"],
-            )
-            result[Product.INK] = (
-                ink_take_orders + ink_clear_orders + ink_make_orders
-            )
+
+            orders = self.ink(od, ink_position, traderObject)
+
+            result[Product.INK] = orders
 
         conversions = 1
         traderData = jsonpickle.encode(traderObject)

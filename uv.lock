@@ -1633,7 +1633,7 @@ requires-dist = [
     { name = "orjson", specifier = ">=3.10.16" },
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "plotly", specifier = ">=6.0.1" },
-    { name = "prosperity3bt", specifier = ">=0.5.0" },
+    { name = "prosperity3bt", specifier = ">=0.6.0" },
     { name = "scikit-learn", specifier = ">=1.6.1" },
     { name = "statsmodels", specifier = ">=0.14.4" },
     { name = "tqdm", specifier = ">=4.67.1" },
@@ -1644,7 +1644,7 @@ dev = [{ name = "jupyter", specifier = ">=1.1.1" }]
 
 [[package]]
 name = "prosperity3bt"
-version = "0.5.0"
+version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ipython" },
@@ -1653,9 +1653,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a2/3a/3625aeda9c82c506eb6d8a81fce0d9b71f07584e2ac9d4bebfd8e5fbb83f/prosperity3bt-0.5.0.tar.gz", hash = "sha256:1d71d74f23d3adb4d897d49a57fc0cddae718365257c7d740ba4560b80d0c7c4", size = 919534 }
+sdist = { url = "https://files.pythonhosted.org/packages/d3/df/7ab219783babd14df651ce89c3d475f48b98f743bf04377de544d83c5400/prosperity3bt-0.6.0.tar.gz", hash = "sha256:1be6d6298b61cc1c57c6e3643a4477dbe7defcd89abdf267ce6472223bebabe3", size = 4264860 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b2/9a/a2100cd05c459cc5a6b3be77a7b488a136bfb5140ce9c06c45f8ecf2ef9c/prosperity3bt-0.5.0-py3-none-any.whl", hash = "sha256:3d26bd5d3b6f4a9d5172908faece374f125b51b62c44479825a59daa2afe92eb", size = 1015935 },
+    { url = "https://files.pythonhosted.org/packages/10/58/6b7e8510b7663706450e5f3f53682672e5c6ab5c406af8c69a19f6cea392/prosperity3bt-0.6.0-py3-none-any.whl", hash = "sha256:bf568bb2f1bbc9151fd67e744cddec5bacea4a7d74d593a5f4261428cbdaa351", size = 4536492 },
 ]
 
 [[package]]
