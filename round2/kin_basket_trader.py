@@ -451,6 +451,127 @@ class Trader:
     def synthetic1():
         pass
 
+    
+    def chunk_orders(self, orders: list[tuple], chunk_size: int, ascending=True):
+        orders = sorted(orders, reverse = not ascending)
+        chunk_depth = {}
+        i = 0
+        while i < len(orders):
+            price, quantity = orders[i]
+            num_chunks = quantity // chunk_size
+            leftover_pieces = quantity % chunk_size
+            chunk_price = price * chunk_size
+            if num_chunks > 0:
+                chunk_depth[chunk_price] = chunk_depth.get(chunk_price, 0) + num_chunks
+            if leftover_pieces > 0:
+                hybrid_price = leftover_pieces * price
+                i += 1
+                while i < len(orders):
+                    next_price, next_quantity = orders[i]
+                    to_fill = chunk_size - leftover_pieces
+                    filled = min(next_quantity, to_fill)
+                    leftover_pieces += filled
+                    hybrid_price += filled * next_price
+                    next_quantity -= filled
+                    orders[i] = next_price, next_quantity
+                    if leftover_pieces == chunk_size:
+                        break
+                    i += 1
+                if leftover_pieces == chunk_size:
+                    chunk_depth[hybrid_price] = chunk_depth.get(hybrid_price, 0) + 1
+            else:
+                i += 1
+        return chunk_depth
+
+    # chunk_depth = chunk_orders([(10, 42), (8, 40), (2, 28)], 6, ascending=False)
+
+    def construct_synth_buy_orders(self, order_depths: dict[str, OrderDepth], weights: dict[str, int]) -> dict[int, int]:
+
+        synth_buy_orders = {}
+        
+        prod_chunked_buy = {}
+
+        for prod, weight in weights.items():
+            buy_orders = order_depths[prod].buy_orders.items()
+            if len(buy_orders) == 0:
+                return synth_buy_orders
+            chunked_buys = self.chunk_orders(buy_orders, weight, ascending=False)
+            chunked_buys = sorted(chunked_buys.items(), reverse=True)
+            prod_chunked_buy[prod] = chunked_buys
+
+        exhausted = False
+
+        while not exhausted:
+            quantity = 999999999
+            for prod, chunked_buys in prod_chunked_buy.items():
+                best_bid, vol = chunked_buys[0]
+                quantity = min(quantity, vol)
+
+            synth_bid = 0
+
+            for prod, chunked_buys in prod_chunked_buy.items():
+                best_bid, vol = chunked_buys[0]
+                synth_bid += best_bid
+                newvol = vol - quantity
+                chunked_buys[0] = best_bid, newvol
+                if newvol == 0:
+                    chunked_buys.pop(0)
+                if len(chunked_buys) == 0:
+                    exhausted = True
+                prod_chunked_buy[prod] = chunked_buys
+                
+            synth_buy_orders[synth_bid] = quantity
+
+        return synth_buy_orders
+
+    def construct_synth_sell_orders(self, order_depths: dict[str, OrderDepth], weights: dict[str, int]) -> dict[int, int]:
+
+        synth_sell_orders = {}
+
+        prod_chunked_sell = {}
+
+        for prod, weight in weights.items():
+            sell_orders = order_depths[prod].sell_orders.items()
+            if len(sell_orders) == 0:
+                return synth_sell_orders
+            sell_orders = [(price, -quantity) for price, quantity in sell_orders]
+            chunked_sells = self.chunk_orders(sell_orders, weight, ascending=True)
+            chunked_sells = sorted(chunked_sells.items())
+            prod_chunked_sell[prod] = chunked_sells
+
+        exhausted = False
+
+        while not exhausted:
+            quantity = 999999999
+            for prod, chunked_sells in prod_chunked_sell.items():
+                best_ask, vol = chunked_sells[0]
+                quantity = min(quantity, vol)
+
+            synth_ask = 0
+
+            for prod, chunked_sells in prod_chunked_sell.items():
+                best_ask, vol = chunked_sells[0]
+                synth_ask += best_ask
+                newvol = vol - quantity
+                chunked_sells[0] = best_ask, newvol
+                if newvol == 0:
+                    chunked_sells.pop(0)
+                if len(chunked_sells) == 0:
+                    exhausted = True
+                prod_chunked_sell[prod] = chunked_sells
+                
+            synth_sell_orders[synth_ask] = -quantity
+
+
+    def construct_synth_od(self, order_depths: dict[str, OrderDepth], weights: dict[str, int]) -> OrderDepth:
+            
+        order_depth = OrderDepth()
+        order_depth.buy_orders = self.construct_synth_buy_orders(order_depths, weights)
+        order_depth.sell_orders = self.construct_synth_sell_orders(order_depths, weights)
+
+        return order_depth
+
+
     '''
     spread = basket1-synth spread
     long basket1, short synth
@@ -498,48 +619,11 @@ class Trader:
 
 
     '''
-    
-
-    def construct_synth_od(self, order_depths: dict[str, OrderDepth], weights: dict[str, int]):
-
-        synth_buy_orders = {}
-        prod_buy_orders = {}
-
-        while True:
-        
-            max_quantity = 99999999
-
-            # get maximmum quantity possible at current best price level
-            for prod, weight in weights.items():
-                prod_buy_orders[prod] = sorted(order_depths[prod].buy_orders.items(), reverse=True)
-                buy_orders = prod_buy_orders[prod]
-                best_bid, vol = buy_orders[0]
-                q = vol // weight
-                remainder = vol % weight
-                max_quantity = min(max_quantity, q)
-
-            synth_bid = 0
-            synth_vol = max_quantity
-
-            # update best price level with basket quantity taken off 
-            for prod, weight in weights.items():
-                buy_orders = prod_buy_orders[prod]
-                best_bid, vol = buy_orders[0]
-                updated_vol = vol - max_quantity * weight
-                if updated_vol == 0:
-                    prod_buy_orders.pop(0)
-
-                synth_bid += best_bid * weight
-            
-        
-            synth_buy_orders[synth_bid] = synth_vol
-            
-
-
 
 
 
     def market_bid_spread(self, order_depths: dict[str, OrderDepth], weights: dict[str, int]):
+        pass
         
 
     # def spread(self, order_depths):
@@ -556,37 +640,10 @@ class Trader:
 
         pass
 
-    def market_bid_synth(self, order_depths: dict[str, OrderDepth], weights: dict[str, int]):
-        market_bid = 0
-        for prod, weight in weights.items():
-            od = order_depths[prod]
-            best_bid, best_bid_vol = max(od.buy_orders.items())
-            market_bid += best_bid * weight
-        return market_bid
-    
-    def market_ask_synth(self, order_depths: dict[str, OrderDepth], weights: dict[str, int]):
-        market_ask = 0
-        for prod, weight in weights.items():
-            od = order_depths[prod]
-            best_ask, best_ask_vol = min(od.sell_orders.items())
-            market_ask += best_ask * weight
-        return market_ask
-
-    def swmid_synth(self, order_depths: dict[str, OrderDepth], weights: dict[str, int]):
-        swmid = 0
-        for prod, weight in weights.items():
-            od = order_depths[prod]
-            best_bid, best_bid_vol = max(od.buy_orders.items())
-            best_ask, best_ask_vol = min(od.sell_orders.items())
-            prod_swmid = (best_bid * best_ask_vol + best_ask * best_bid_vol) / (best_bid_vol + best_ask_vol)
-            swmid += prod_swmid * weight
-        return swmid
 
     def basket(
         self, order_depths: dict[str, OrderDepth], positions: dict[str, int], trader_data: dict
     ) -> list[Order]:
-        
-        
         
         
         best_market_ask = min(order_depth.sell_orders.keys())
