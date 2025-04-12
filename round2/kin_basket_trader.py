@@ -3,6 +3,7 @@ import string
 import jsonpickle
 import math
 from copy import deepcopy
+from collections import deque
 
 
 class Product:
@@ -25,6 +26,11 @@ BASKET1_WEIGHTS = {
 #  'ink_position_limit': 50,
 #  'clear_price_thresh': 0.0
 # }
+
+
+class OrderType:
+    BUY = 'BUY'
+    SELL = 'SELL'
 
 PARAMS = {
     "ink_change_threshold_pct": 0.012,
@@ -172,17 +178,6 @@ class Logger:
         return value[: max_length - 3] + "..."
 
 # logger = Logger()
-
-
-
-
-'''
-parameters for z-score trading spreads
-thresh: 8, std_window: 25, sma_window: 125, pnl: 12486.761331593298
-thresh: 10, std_window: 25, sma_window: 150, pnl: 11953.98168192296
-thresh: 5, std_window: 20, sma_window: 35, pnl: 10530.0
-'''
-
 
 class Trader:
     def __init__(self, params: dict = None):
@@ -375,6 +370,12 @@ class Trader:
         mid = (best_ask + best_bid) / 2
         return mid
 
+    def swmid(self, order_depth: OrderDepth) -> float:
+        best_ask, ask_vol = min(order_depth.sell_orders.items())
+        best_bid, bid_vol = max(order_depth.buy_orders.items())
+
+        return (best_ask * bid_vol + best_bid * ask_vol) / (bid_vol + ask_vol)
+
     def rolling_mean(
         self, product: str, order_depth: OrderDepth, trader_data: dict
     ) -> float:
@@ -447,13 +448,13 @@ class Trader:
                 sell_order_volume += quantity
 
         return own_orders
-    
-    def synthetic1():
-        pass
 
-    
-    def chunk_orders(self, orders: list[tuple], chunk_size: int, ascending=True):
-        orders = sorted(orders, reverse = not ascending)
+    def chunk_orders(self, orders: list[tuple], chunk_size: int, order_type=OrderType.BUY) -> dict[int, int]:
+        if order_type == OrderType.BUY:
+            orders = sorted(orders, reverse=True)
+        else:
+            orders = sorted([(p, -q) for p, q in orders])
+
         chunk_depth = {}
         i = 0
         while i < len(orders):
@@ -481,9 +482,14 @@ class Trader:
                     chunk_depth[hybrid_price] = chunk_depth.get(hybrid_price, 0) + 1
             else:
                 i += 1
-        return chunk_depth
+        
+        if order_type == OrderType.SELL:
+            for price in chunk_depth:
+                q = chunk_depth[price]
+                chunk_depth[price] = -q
 
-    # chunk_depth = chunk_orders([(10, 42), (8, 40), (2, 28)], 6, ascending=False)
+        return chunk_depth
+    
 
     def construct_synth_buy_orders(self, order_depths: dict[str, OrderDepth], weights: dict[str, int]) -> dict[int, int]:
 
@@ -492,11 +498,23 @@ class Trader:
         prod_chunked_buy = {}
 
         for prod, weight in weights.items():
-            buy_orders = order_depths[prod].buy_orders.items()
+            if prod not in order_depths:
+                return {}
+
+            # if weight is positve, market buy orders
+            if weight > 0:
+                buy_orders = order_depths[prod].buy_orders.items()
+                chunked_buys = self.chunk_orders(buy_orders, weight)
+                chunked_buys = sorted(chunked_buys.items(), reverse=True)
+            # if weight is negative, market sell orders
+            elif weight < 0:
+                buy_orders = order_depths[prod].sell_orders.items()
+                chunked_buys = self.chunk_orders(buy_orders, abs(weight), order_type=OrderType.SELL)
+                chunked_buys = sorted(chunked_buys.items())
+
             if len(buy_orders) == 0:
-                return synth_buy_orders
-            chunked_buys = self.chunk_orders(buy_orders, weight, ascending=False)
-            chunked_buys = sorted(chunked_buys.items(), reverse=True)
+                return {}
+
             prod_chunked_buy[prod] = chunked_buys
 
         exhausted = False
@@ -504,16 +522,21 @@ class Trader:
         while not exhausted:
             quantity = 999999999
             for prod, chunked_buys in prod_chunked_buy.items():
-                best_bid, vol = chunked_buys[0]
-                quantity = min(quantity, vol)
+                best_price, vol = chunked_buys[0]
+                quantity = min(quantity, abs(vol))
 
             synth_bid = 0
 
             for prod, chunked_buys in prod_chunked_buy.items():
-                best_bid, vol = chunked_buys[0]
-                synth_bid += best_bid
-                newvol = vol - quantity
-                chunked_buys[0] = best_bid, newvol
+                best_price, vol = chunked_buys[0]
+                # dealing with negative weighted products
+                if vol < 0:
+                    synth_bid -= best_price
+                    newvol = vol + quantity
+                else:
+                    synth_bid += best_price
+                    newvol = vol - quantity
+                chunked_buys[0] = best_price, newvol
                 if newvol == 0:
                     chunked_buys.pop(0)
                 if len(chunked_buys) == 0:
@@ -524,53 +547,20 @@ class Trader:
 
         return synth_buy_orders
 
-    def construct_synth_sell_orders(self, order_depths: dict[str, OrderDepth], weights: dict[str, int]) -> dict[int, int]:
-
-        synth_sell_orders = {}
-
-        prod_chunked_sell = {}
-
-        for prod, weight in weights.items():
-            sell_orders = order_depths[prod].sell_orders.items()
-            if len(sell_orders) == 0:
-                return synth_sell_orders
-            sell_orders = [(price, -quantity) for price, quantity in sell_orders]
-            chunked_sells = self.chunk_orders(sell_orders, weight, ascending=True)
-            chunked_sells = sorted(chunked_sells.items())
-            prod_chunked_sell[prod] = chunked_sells
-
-        exhausted = False
-
-        while not exhausted:
-            quantity = 999999999
-            for prod, chunked_sells in prod_chunked_sell.items():
-                best_ask, vol = chunked_sells[0]
-                quantity = min(quantity, vol)
-
-            synth_ask = 0
-
-            for prod, chunked_sells in prod_chunked_sell.items():
-                best_ask, vol = chunked_sells[0]
-                synth_ask += best_ask
-                newvol = vol - quantity
-                chunked_sells[0] = best_ask, newvol
-                if newvol == 0:
-                    chunked_sells.pop(0)
-                if len(chunked_sells) == 0:
-                    exhausted = True
-                prod_chunked_sell[prod] = chunked_sells
-                
-            synth_sell_orders[synth_ask] = -quantity
-
-
     def construct_synth_od(self, order_depths: dict[str, OrderDepth], weights: dict[str, int]) -> OrderDepth:
             
         order_depth = OrderDepth()
         order_depth.buy_orders = self.construct_synth_buy_orders(order_depths, weights)
-        order_depth.sell_orders = self.construct_synth_sell_orders(order_depths, weights)
+
+        neg_weights = {prod: -weights[prod] for prod in weights}
+        sell_orders = self.construct_synth_buy_orders(order_depths, neg_weights)
+        sell_orders_pos = {}
+        for price, q in sell_orders.items():
+            sell_orders_pos[-price] = -q
+
+        order_depth.sell_orders = sell_orders
 
         return order_depth
-
 
     '''
     spread = basket1-synth spread
@@ -617,124 +607,77 @@ class Trader:
     [(254, 91), (247, 8), (231, 12)]
     [(254, 11), (247, 8), (231, 12)]
 
+    parameters for z-score trading spreads
+    thresh: 8, std_window: 25, sma_window: 125, pnl: 12486.761331593298
+    thresh: 10, std_window: 25, sma_window: 150, pnl: 11953.98168192296
+    thresh: 5, std_window: 20, sma_window: 35, pnl: 10530.0
 
     '''
-
-
-
-    def market_bid_spread(self, order_depths: dict[str, OrderDepth], weights: dict[str, int]):
-        pass
-        
-
-    # def spread(self, order_depths):
-        
-    #     BASKET1_WEIGHTS
-
-    def market_bid_spread(self, order_depths: dict[str, OrderDepth]):
-        market_bid = 0
-        
-        best_basket_ask, best_basket_ask_vol = min(order_depths[Product.BASKET1].sell_orders.items())
-        best_synth_bid, best_synth_bid_vol = max(order_depths[Product.SYNTHETIC].buy_orders.items())
-        
-
-
-        pass
-
 
     def basket(
         self, order_depths: dict[str, OrderDepth], positions: dict[str, int], trader_data: dict
     ) -> list[Order]:
         
+        spread_weights = {
+            Product.BASKET1: 1,
+            Product.CROISSANTS: -6,
+            Product.JAMS: -3,
+            Product.DJEMBES: -1
+        }
+
+        spread_od = self.construct_synth_od(order_depths, spread_weights)
         
-        best_market_ask = min(order_depth.sell_orders.keys())
-        best_market_bid = max(order_depth.buy_orders.keys())
+        best_ask = min(spread_od.sell_orders.keys())
+        best_bid = max(spread_od.buy_orders.keys())
+        
+        sma_window_size = 35
+        std_window_size = 20
+        thresh_z = 5
 
-        ink_window_size = self.params["ink_window_size"]
-        change_threshold_pct = self.params["ink_change_threshold_pct"]
-        position_limit = self.params["ink_position_limit"]
-        clear_price_thresh = self.params["clear_price_thresh"]
+        swmid = self.swmid(spread_od)
 
-        curr_mid = self.mid_price(order_depth)
-
-        ink_price_hist: list = trader_data.get("ink_price_hist", [])
-        mean_price = (
-            sum(ink_price_hist) / len(ink_price_hist) if ink_price_hist else curr_mid
+        spread_price_hist = trader_data.get("spread_price_hist", [])
+        spread_price_hist = deque(spread_price_hist)
+        swmid_mean = (
+            sum(spread_price_hist) / len(spread_price_hist) if spread_price_hist else swmid
         )
+
         std = (
-            (sum((x - mean_price) ** 2 for x in ink_price_hist) / len(ink_price_hist))
+            (sum((x - swmid_mean) ** 2 for x in spread_price_hist) / len(spread_price_hist))
             ** (1 / 2)
-            if ink_price_hist
+            if spread_price_hist
             else 1
         )
 
-        ink_trigger_hist: list = trader_data.get(
-            "ink_trigger_hist", [0] * ink_window_size
-        )
-
-        position_hist: list = trader_data.get("ink_position_hist", [])
-        position_hist.append(position)
-        if len(position_hist) > ink_window_size:
-            position_hist.pop(0)
-
         orders = []
-
-        delta_pct = curr_mid / mean_price - 1
+        z = (swmid - swmid) / std
 
         threshold_triggered = False
 
         # big change up
-        if delta_pct >= change_threshold_pct:
+        if z >= thresh_z:
             # sell
-            orders = self.limit_sell(
-                Product.INK, od, best_market_bid, position, position_limit
-            )
+            # TODO
+            # orders = self.limit_sell(
+            #     Product.INK, od, best_bid, position, position_limit
+            # )
             threshold_triggered = True
 
         # big change down
-        elif delta_pct <= -change_threshold_pct:
+        elif z <= -thresh_z:
             # buy
-            orders = self.limit_buy(
-                Product.INK, od, best_market_ask, position, position_limit
-            )
+            # TODO
+            # orders = self.limit_buy(
+            #     Product.INK, od, best_ask, position, position_limit
+            # )
             threshold_triggered = True
+        
+        """Update price history"""
 
-        # neutralize position on flats
-        elif position > 0:
-            # sell
-            orders = self.limit_sell(
-                Product.INK, od, mean_price - clear_price_thresh, position, 0
-            )
+        if len(spread_price_hist) > sma_window_size:
+            spread_price_hist.popleft()
 
-        elif position < 0:
-            # buy
-            orders = self.limit_buy(
-                Product.INK, od, mean_price + clear_price_thresh, position, 0
-            )
-
-        # if ink_trigger_hist[-1] == 1 and not threshold_triggered:
-        #     # neutralize position
-        #     if position > 0:
-        #         orders = self.limit_sell(Product.INK, od, mean_price - clear_price_thresh, position, 0)
-        #         # orders = self.limit_sell(Product.INK, od, best_market_bid, position, 0)
-        #     elif position < 0:
-        #         orders = self.limit_buy(Product.INK, od, mean_price + clear_price_thresh, position, 0)
-        #         # orders = self.limit_buy(Product.INK, od, best_market_ask, position, 0)
-
-        """Update ink price history"""
-        if not threshold_triggered:
-            ink_price_hist.append(curr_mid)
-
-        ink_trigger_hist.append(1 if threshold_triggered else 0)
-
-        if len(ink_price_hist) > ink_window_size:
-            ink_price_hist.pop(0)
-
-        if len(ink_trigger_hist) > ink_window_size:
-            ink_trigger_hist.pop(0)
-
-        trader_data["ink_price_hist"] = ink_price_hist
-        trader_data["ink_trigger_hist"] = ink_trigger_hist
-        trader_data["ink_position_hist"] = position_hist
+        trader_data["ink_price_hist"] = list(spread_price_hist)
 
         return orders
 
