@@ -704,7 +704,8 @@ class Trader:
         
         sma_window_size = 35
         std_window_size = 20
-        thresh_z = 5
+        # thresh_z = 5
+        thresh_z = 3
 
         swmid = self.swmid(synth_od)
 
