@@ -374,7 +374,7 @@ class Trader:
         best_ask, ask_vol = min(order_depth.sell_orders.items())
         best_bid, bid_vol = max(order_depth.buy_orders.items())
 
-        return (best_ask * bid_vol + best_bid * ask_vol) / (bid_vol + ask_vol)
+        return (best_ask * bid_vol + best_bid * -ask_vol) / (bid_vol + -ask_vol)
 
     def rolling_mean(
         self, product: str, order_depth: OrderDepth, trader_data: dict
@@ -489,7 +489,6 @@ class Trader:
                 chunk_depth[price] = -q
 
         return chunk_depth
-    
 
     def construct_synth_buy_orders(self, order_depths: dict[str, OrderDepth], weights: dict[str, int]) -> dict[int, int]:
 
@@ -558,9 +557,79 @@ class Trader:
         for price, q in sell_orders.items():
             sell_orders_pos[-price] = -q
 
-        order_depth.sell_orders = sell_orders
+        order_depth.sell_orders = sell_orders_pos
 
         return order_depth
+
+    def buy_synth(self, limit_price: int, position_limits: dict[str, int], positions: dict[str, int], synth_od: OrderDepth, order_depths: dict[str, OrderDepth], weights: dict[str, int]):
+        
+        can_buy = 999999
+
+        for prod, weight in weights.items():
+            # if weight is greater than 0 we want to look at market sells to match
+            # don't want to exceed upper position limit
+            if weight > 0:
+                chunks = position_limits[prod] - positions[prod]
+            # if weight is less than 0 we want to look at market buys and not exceed lower position limit
+            else:
+                chunks = positions[prod] - -position_limits[prod]
+            can_buy = min(chunks // abs(weight), can_buy)
+        
+
+        # get synth volume to buy
+        # we match with synth market sells to buy synth
+        # only part different between buy and sell?
+        synth_market_sells = synth_od.sell_orders
+        acc_synth_market_sells = [(p, q) for p, q in synth_market_sells.items() if p <= limit_price]
+
+        acc_market_sell_vol = sum(x[1] for x in acc_synth_market_sells) if acc_synth_market_sells else 0
+
+        to_buy = min(-acc_market_sell_vol, can_buy)
+
+        if to_buy == 0:
+            return []
+        
+        orders = []
+
+        for prod, weight in weights.items():
+            # here q would automatically be negative if it's negative weight
+            q = weight * to_buy
+            match_price = 0 if weight < 0 else 9999999
+            orders.append(Order(prod, match_price, q))
+
+        return orders
+
+    def sell_synth(self, limit_price: int, position_limits: dict[str, int], positions: dict[str, int], synth_od: OrderDepth, order_depths: dict[str, OrderDepth], weights: dict[str, int]):
+
+        weights = {prod: -weights[prod] for prod in weights}
+        
+        can_sell = 999999
+
+        for prod, weight in weights.items():
+            if weight > 0:
+                chunks = position_limits[prod] - positions[prod]
+            else:
+                chunks = positions[prod] - -position_limits[prod]
+            can_sell = min(chunks // abs(weight), can_sell)
+
+        synth_market_buys = synth_od.buy_orders
+        acc_synth_market_buys = [(p, q) for p, q in synth_market_buys.items() if p >= limit_price]
+
+        acc_market_buy_vol = sum(x[1] for x in acc_synth_market_buys) if acc_synth_market_buys else 0
+
+        to_buy = min(acc_market_buy_vol, can_sell)
+
+        if to_buy == 0:
+            return []
+        
+        orders = []
+
+        for prod, weight in weights.items():
+            q = weight * to_buy
+            match_price = 0 if weight < 0 else 9999999
+            orders.append(Order(prod, match_price, q))
+
+        return orders
 
     '''
     spread = basket1-synth spread
@@ -618,23 +687,23 @@ class Trader:
         self, order_depths: dict[str, OrderDepth], positions: dict[str, int], trader_data: dict
     ) -> list[Order]:
         
-        spread_weights = {
+        synth_weights = {
             Product.BASKET1: 1,
             Product.CROISSANTS: -6,
             Product.JAMS: -3,
             Product.DJEMBES: -1
         }
 
-        spread_od = self.construct_synth_od(order_depths, spread_weights)
+        synth_od = self.construct_synth_od(order_depths, synth_weights)
         
-        best_ask = min(spread_od.sell_orders.keys())
-        best_bid = max(spread_od.buy_orders.keys())
+        best_ask = min(synth_od.sell_orders.keys())
+        best_bid = max(synth_od.buy_orders.keys())
         
         sma_window_size = 35
         std_window_size = 20
         thresh_z = 5
 
-        swmid = self.swmid(spread_od)
+        swmid = self.swmid(synth_od)
 
         spread_price_hist = trader_data.get("spread_price_hist", [])
         spread_price_hist = deque(spread_price_hist)
@@ -654,22 +723,29 @@ class Trader:
 
         threshold_triggered = False
 
+        position_limits = {
+            Product.CROISSANTS: 250,
+            Product.JAMS: 350,
+            Product.DJEMBES: 60,
+            Product.BASKET1: 60,
+        }
+
+        orders = []
+
         # big change up
         if z >= thresh_z:
             # sell
             # TODO
-            # orders = self.limit_sell(
-            #     Product.INK, od, best_bid, position, position_limit
-            # )
+            sell_synth_orders = self.sell_synth(best_ask, position_limits, positions, synth_od, order_depths, synth_weights)
+            orders.append(sell_synth_orders)
             threshold_triggered = True
 
         # big change down
         elif z <= -thresh_z:
             # buy
             # TODO
-            # orders = self.limit_buy(
-            #     Product.INK, od, best_ask, position, position_limit
-            # )
+            buy_synth_orders = self.buy_synth(best_ask, position_limits, positions, synth_od, order_depths, synth_weights)
+            orders.append(buy_synth_orders)
             threshold_triggered = True
         
         """Update price history"""
@@ -677,7 +753,7 @@ class Trader:
         if len(spread_price_hist) > sma_window_size:
             spread_price_hist.popleft()
 
-        trader_data["ink_price_hist"] = list(spread_price_hist)
+        trader_data["spread_price_hist"] = list(spread_price_hist)
 
         return orders
 

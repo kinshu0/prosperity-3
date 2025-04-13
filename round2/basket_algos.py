@@ -1,40 +1,4 @@
-
-'''
-weights = 6c 3j 1d
-
-c [(42, 10), (40, 8), (28, 2)]
-j [(36, 7), (35, 8), (34, 2)]
-d [(27, 9), (26, 8), (25, 9)]
-
-7
-12
-27
-
-can sell 7 at best bid
-
-7 - 7 = 0
-12 - 7 = 5
-27 - 7 = 20
-
-pull back next price level
-
-c [(42, 10), (40, 8), (28, 2)]
-j [(15, 7), (35, 8), (34, 2)]
-d [(27, 9), (26, 8), (25, 9)]
-
-[(x, 2), (x, 2), (x, 1), (x, 3)]
-
-dealing with negative wegihts:
-if negative weights, we basically do the same thing except run the sell side for it instead?
-
-
-'''
-
-# change chunk_orders to work with negative quantities
-'''
-if ascending we're sorting market sell orders
-so if ascending then we know quantity is likely negative
-'''
+from datamodel import Order
 
 class OrderDepth:
     def __init__(self):
@@ -88,31 +52,6 @@ def chunk_orders(orders: list[tuple], chunk_size: int, order_type=OrderType.BUY)
             chunk_depth[price] = -q
 
     return chunk_depth
-
-'''
-
-Say we have a synthetic with compositin
-
-spread_synth_weights = {
-    basket1: 1
-    croissants: -6,
-    jams: -3,
-    djembes: -1,
-}
-
-
-we want to create buy and sell sides of order depth
-
-for order depth market buy_orders:
-- we'll use basket1 market buy orders
-- rest we'll use product sell orders
-
-for order depth market sell_orders:
-flip the sign and that's what we'll be using same as above but simply with sign flipped, will be able to reuse same function
-- we'll use basket1 market sell orders
-- rest we'll use product buy orders
-
-'''
 
 def construct_synth_buy_orders(order_depths: dict[str, OrderDepth], weights: dict[str, int]) -> dict[int, int]:
 
@@ -174,10 +113,86 @@ def construct_synth_od(order_depths: dict[str, OrderDepth], weights: dict[str, i
         
     order_depth = OrderDepth()
     order_depth.buy_orders = construct_synth_buy_orders(order_depths, weights)
+
     neg_weights = {prod: -weights[prod] for prod in weights}
-    order_depth.sell_orders = construct_synth_buy_orders(order_depths, neg_weights)
+    sell_orders = construct_synth_buy_orders(order_depths, neg_weights)
+    sell_orders_pos = {}
+    for price, q in sell_orders.items():
+        sell_orders_pos[-price] = -q
+
+    order_depth.sell_orders = sell_orders_pos
 
     return order_depth
+
+def buy_synth(limit_price: int, position_limits: dict[str, int], positions: dict[str, int], synth_od: OrderDepth, order_depths: dict[str, OrderDepth], weights: dict[str, int]):
+    
+    can_buy = 999999
+
+    for prod, weight in weights.items():
+        # if weight is greater than 0 we want to look at market sells to match
+        # don't want to exceed upper position limit
+        if weight > 0:
+            chunks = position_limits[prod] - positions[prod]
+        # if weight is less than 0 we want to look at market buys and not exceed lower position limit
+        else:
+            chunks = positions[prod] - -position_limits[prod]
+        can_buy = min(chunks // abs(weight), can_buy)
+    
+
+    # get synth volume to buy
+    # we match with synth market sells to buy synth
+    # only part different between buy and sell?
+    synth_market_sells = synth_od.sell_orders
+    acc_synth_market_sells = [(p, q) for p, q in synth_market_sells.items() if p <= limit_price]
+
+    acc_market_sell_vol = sum(x[1] for x in acc_synth_market_sells) if acc_synth_market_sells else 0
+
+    to_buy = min(-acc_market_sell_vol, can_buy)
+
+    if to_buy == 0:
+        return []
+    
+    orders = []
+
+    for prod, weight in weights.items():
+        # here q would automatically be negative if it's negative weight
+        q = weight * to_buy
+        match_price = 0 if weight < 0 else 9999999
+        orders.append(Order(prod, match_price, q))
+
+    return orders
+
+def sell_synth(limit_price: int, position_limits: dict[str, int], positions: dict[str, int], synth_od: OrderDepth, order_depths: dict[str, OrderDepth], weights: dict[str, int]):
+
+    weights = {prod: -weights[prod] for prod in weights}
+    
+    can_sell = 999999
+
+    for prod, weight in weights.items():
+        if weight > 0:
+            chunks = position_limits[prod] - positions[prod]
+        else:
+            chunks = positions[prod] - -position_limits[prod]
+        can_sell = min(chunks // abs(weight), can_sell)
+
+    synth_market_buys = synth_od.buy_orders
+    acc_synth_market_buys = [(p, q) for p, q in synth_market_buys.items() if p >= limit_price]
+
+    acc_market_buy_vol = sum(x[1] for x in acc_synth_market_buys) if acc_synth_market_buys else 0
+
+    to_buy = min(acc_market_buy_vol, can_sell)
+
+    if to_buy == 0:
+        return []
+    
+    orders = []
+
+    for prod, weight in weights.items():
+        q = weight * to_buy
+        match_price = 0 if weight < 0 else 9999999
+        orders.append(Order(prod, match_price, q))
+
+    return orders
 
 class Product:
     BASKET1 = "PICNIC_BASKET1"
@@ -187,18 +202,6 @@ class Product:
     SYNTHETIC = "SYNTHETIC"
     SPREAD = "SPREAD"
 
-synth_basket_weights = {
-    Product.CROISSANTS: 6,
-    Product.JAMS: 3,
-    Product.DJEMBES: 1,
-}
-
-spread_weights = {
-    Product.BASKET1: 1,
-    Product.CROISSANTS: -6,
-    Product.JAMS: -3,
-    Product.DJEMBES: -1,
-}
 
 order_depths = {
     Product.BASKET1: OrderDepth(),
@@ -206,15 +209,6 @@ order_depths = {
     Product.JAMS: OrderDepth(),
     Product.DJEMBES: OrderDepth(),
 }
-
-'''
-{397: 2, 350: 3, 380: 5}
-{397: -2, 350: -3, 380: -5}
-
-
-od.buy_orders for synth basket1
-{387: 1, 383: 1, 373: 1}
-'''
 
 # BASKET1 orders - realistic market with bids below asks and small price increments
 order_depths[Product.BASKET1].buy_orders = {395: 2, 394: 5, 393: 3}
@@ -232,11 +226,41 @@ order_depths[Product.JAMS].sell_orders = {33: -7, 34: -8, 35: -2}
 order_depths[Product.DJEMBES].buy_orders = {24: 6, 23: 8, 22: 5}
 order_depths[Product.DJEMBES].sell_orders = {25: -9, 26: -8, 27: -9}
 
+synth_basket_weights = {
+    Product.CROISSANTS: 6,
+    Product.JAMS: 3,
+    Product.DJEMBES: 1,
+}
+
+spread_weights = {
+    Product.BASKET1: 1,
+    Product.CROISSANTS: -6,
+    Product.JAMS: -3,
+    Product.DJEMBES: -1,
+}
+
+positions = {
+    Product.BASKET1: 0,
+    Product.CROISSANTS: 0,
+    Product.JAMS: 0,
+    Product.DJEMBES: 0,
+}
+
+position_limits = {
+    Product.CROISSANTS: 250,
+    Product.JAMS: 350,
+    Product.DJEMBES: 60,
+    Product.BASKET1: 60,
+}
+
 # od = construct_synth_buy_orders(order_depths, BASKET1_WEIGHTS)
 # od = construct_synth_buy_orders(order_depths, spread_weights)
-od = construct_synth_od(order_depths, spread_weights)
+# od, buy_pieces, sell_pieces = construct_synth_buy(order_depths, spread_weights)
+# agg_orders, pieces_orders = construct_synth_buy(order_depths, spread_weights)
 
-# print(f'{od.buy_orders}')
-# print(f'{od.sell_orders}')
+od = construct_synth_od(order_depths, spread_weights)
+# sell_orders = sell_synth(23, position_limit, position_limit, od, order_depths, spread_weights)
+orders = sell_synth(9, position_limits, positions, od, order_depths, spread_weights)
 
 print(od)
+print(orders)
