@@ -694,6 +694,9 @@ class Trader:
             Product.DJEMBES: -1
         }
 
+        for prod in synth_weights:
+            positions[prod] = positions.get(prod, 0)
+
         synth_od = self.construct_synth_od(order_depths, synth_weights)
         
         best_ask = min(synth_od.sell_orders.keys())
@@ -710,16 +713,16 @@ class Trader:
         swmid_mean = (
             sum(spread_price_hist) / len(spread_price_hist) if spread_price_hist else swmid
         )
+        
+        std = 0
+        for i in reversed(range(len(spread_price_hist))):
+            std += (spread_price_hist[i] - swmid_mean) ** 2
+        std = (std / len(spread_price_hist)) ** (1 / 2) if spread_price_hist else 1
 
-        std = (
-            (sum((x - swmid_mean) ** 2 for x in spread_price_hist) / len(spread_price_hist))
-            ** (1 / 2)
-            if spread_price_hist
-            else 1
-        )
+        std = max(std, 1)
 
         orders = []
-        z = (swmid - swmid) / std
+        z = (swmid - swmid_mean) / std
 
         threshold_triggered = False
 
@@ -732,23 +735,28 @@ class Trader:
 
         orders = []
 
+        print(z)
+
         # big change up
         if z >= thresh_z:
             # sell
             # TODO
+            print('SELL THRESHOLD TRIGGERED')
             sell_synth_orders = self.sell_synth(best_ask, position_limits, positions, synth_od, order_depths, synth_weights)
-            orders.append(sell_synth_orders)
+            orders.extend(sell_synth_orders)
             threshold_triggered = True
 
         # big change down
         elif z <= -thresh_z:
             # buy
             # TODO
+            print('BUY THRESHOLD TRIGGERED')
             buy_synth_orders = self.buy_synth(best_ask, position_limits, positions, synth_od, order_depths, synth_weights)
-            orders.append(buy_synth_orders)
+            orders.extend(buy_synth_orders)
             threshold_triggered = True
         
         """Update price history"""
+        spread_price_hist.append(swmid)
 
         if len(spread_price_hist) > sma_window_size:
             spread_price_hist.popleft()
