@@ -8,6 +8,7 @@ from collections import deque
 
 class Product:
     BASKET1 = "PICNIC_BASKET1"
+    BASKET2 = "PICNIC_BASKET2"
     JAMS = "JAMS"
     CROISSANTS = "CROISSANTS"
     DJEMBES = "DJEMBES"
@@ -177,7 +178,7 @@ class Logger:
 
         return value[: max_length - 3] + "..."
 
-# logger = Logger()
+logger = Logger()
 
 class Trader:
     def __init__(self, params: dict = None):
@@ -631,57 +632,6 @@ class Trader:
 
         return orders
 
-    '''
-    spread = basket1-synth spread
-    long basket1, short synth
-    long spread we'd want basket1+ and synth-
-
-    spread being positive = basket1 overvalued synthetic undervalued
-
-    spread z-score being above 5 = basket1 overvalued by much more than it should be and synth being much more undervalued
-    we expect this to revert to current window mean
-    so short spread by selling basket 1 and buying synth1
-
-    should we use best bid/ask or swmid?
-    case for using best bid/ask:
-    - to long spread we'd match with market ask for basket1 and market bid for synth
-    - use best bid/ask values of this to calculate price of spread
-    
-
-    window of mean prices for spread
-    same for standard deviation
-    calculate z-score of current swmid for spread
-    if z-score > threshold: short spread
-    if z-score < -threshold: long spread
-
-    value synth buy buying individual components
-
-    we want to either buy or sell synth / 
-
-
-    dealing with not enough volume to buy/sell synth?
-
-    modify order depth to add synthetic order volume and later parse into components in post-processing
-
-
-    how do we buy synthetic and display synthetic volumes, we obv never buy components individually
-
-    creating order depth for synthetic
-
-    if there are 20 strawberries, 5 jams, 2 djembes -> for 6, 3, 1 it translates to volume of 1 synthetic at whatever price is being displayed
-
-    for 2 synthetics, we'd pick off volume from other price levels which prices our components differently
-
-    [(254, 21), (247, 8), (231, 12)]
-    [(254, 91), (247, 8), (231, 12)]
-    [(254, 11), (247, 8), (231, 12)]
-
-    parameters for z-score trading spreads
-    thresh: 8, std_window: 25, sma_window: 125, pnl: 12486.761331593298
-    thresh: 10, std_window: 25, sma_window: 150, pnl: 11953.98168192296
-    thresh: 5, std_window: 20, sma_window: 35, pnl: 10530.0
-
-    '''
 
     def basket(
         self, order_depths: dict[str, OrderDepth], positions: dict[str, int], trader_data: dict
@@ -694,6 +644,32 @@ class Trader:
             Product.DJEMBES: -1
         }
 
+        synthetics = [
+            {
+                Product.BASKET1: 1,
+                Product.CROISSANTS: -6,
+                Product.JAMS: -3,
+                Product.DJEMBES: -1
+            },
+            {
+                Product.BASKET2: 1,
+                Product.CROISSANTS: -4,
+                Product.JAMS: -2
+            },
+            {
+                Product.BASKET1: 1,
+                Product.BASKET2: -1,
+                Product.CROISSANTS: -2,
+                Product.JAMS: -1,
+                Product.DJEMBES: -1
+            },
+            {
+                Product.BASKET1: 2,
+                Product.BASKET2: -3,
+                Product.DJEMBES: -2
+            },
+        ]
+
         for prod in synth_weights:
             positions[prod] = positions.get(prod, 0)
 
@@ -704,8 +680,10 @@ class Trader:
         
         sma_window_size = 35
         std_window_size = 20
-        # thresh_z = 5
-        thresh_z = 3
+        thresh_z = 5
+
+
+        # thresh_z = 3
 
         swmid = self.swmid(synth_od)
 
@@ -740,18 +718,14 @@ class Trader:
 
         # big change up
         if z >= thresh_z:
-            # sell
-            # TODO
-            print('SELL THRESHOLD TRIGGERED')
+            # print('SELL THRESHOLD TRIGGERED')
             sell_synth_orders = self.sell_synth(best_ask, position_limits, positions, synth_od, order_depths, synth_weights)
             orders.extend(sell_synth_orders)
             threshold_triggered = True
 
         # big change down
         elif z <= -thresh_z:
-            # buy
-            # TODO
-            print('BUY THRESHOLD TRIGGERED')
+            # print('BUY THRESHOLD TRIGGERED')
             buy_synth_orders = self.buy_synth(best_ask, position_limits, positions, synth_od, order_depths, synth_weights)
             orders.extend(buy_synth_orders)
             threshold_triggered = True
@@ -792,6 +766,6 @@ class Trader:
 
         conversions = 1
 
-        # logger.flush(state, result, conversions, traderData)
+        logger.flush(state, result, conversions, traderData)
 
         return result, conversions, trader_data
