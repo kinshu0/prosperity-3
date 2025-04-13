@@ -735,7 +735,7 @@ class Trader:
 
         orders = []
 
-        print(z)
+        # print(z)
 
         # big change up
         if z >= thresh_z:
@@ -763,6 +763,9 @@ class Trader:
 
         trader_data["spread_price_hist"] = list(spread_price_hist)
 
+        if orders:
+            print(orders)
+
         return orders
 
     def run(self, state: TradingState) -> dict[str, list[Order]]:
@@ -781,8 +784,8 @@ class Trader:
 
         basket_orders = self.basket(order_depths, positions, trader_data)
 
-        for product in basket_orders:
-            result[product] = result.get(product, []) + basket_orders[product]
+        for order in basket_orders:
+            result[order.symbol] = result.get(order.symbol, []) + [order]
 
         trader_data = jsonpickle.encode(trader_data)
 
