@@ -680,8 +680,7 @@ class Trader:
         
         sma_window_size = 35
         std_window_size = 20
-        thresh_z = 5
-
+        thresh_z = 3
 
         # thresh_z = 3
 
@@ -694,9 +693,10 @@ class Trader:
         )
         
         std = 0
-        for i in reversed(range(len(spread_price_hist))):
+        std_window_size = min(std_window_size, len(spread_price_hist))
+        for i in reversed(range(std_window_size)):
             std += (spread_price_hist[i] - swmid_mean) ** 2
-        std = (std / len(spread_price_hist)) ** (1 / 2) if spread_price_hist else 1
+        std = (std / std_window_size) ** (1 / 2) if spread_price_hist else 1
 
         std = max(std, 1)
 
@@ -766,6 +766,6 @@ class Trader:
 
         conversions = 1
 
-        logger.flush(state, result, conversions, traderData)
+        # logger.flush(state, result, conversions, traderData)
 
         return result, conversions, trader_data
