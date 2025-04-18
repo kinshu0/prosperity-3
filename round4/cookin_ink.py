@@ -272,8 +272,8 @@ class Trader:
                 signal = 'BUY'
             elif return_past > 0 and return_now < 0 and (return_past - return_now) >= 0.008:
                 signal = 'SELL'
-            elif abs(return_now) < 0.002:
-                signal = 'CLEAR'
+            # elif abs(return_now) < 0.002:
+            #     signal = 'CLEAR'
 
         # Act on signal
         if signal == 'BUY':
