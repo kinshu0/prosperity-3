@@ -373,7 +373,6 @@ class Trader:
         change_threshold_pct = self.params['ink_change_threshold_pct']
         position_limit = self.params['ink_position_limit']
         clear_price_thresh = self.params['clear_price_thresh']
-        clear_price_thresh = 5
 
         curr_mid = self.mid_price(order_depth)
         

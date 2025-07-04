@@ -1,0 +1,51 @@
+'''
+    spread = basket1-synth spread
+    long basket1, short synth
+    long spread we'd want basket1+ and synth-
+
+    spread being positive = basket1 overvalued synthetic undervalued
+
+    spread z-score being above 5 = basket1 overvalued by much more than it should be and synth being much more undervalued
+    we expect this to revert to current window mean
+    so short spread by selling basket 1 and buying synth1
+
+    should we use best bid/ask or swmid?
+    case for using best bid/ask:
+    - to long spread we'd match with market ask for basket1 and market bid for synth
+    - use best bid/ask values of this to calculate price of spread
+    
+
+    window of mean prices for spread
+    same for standard deviation
+    calculate z-score of current swmid for spread
+    if z-score > threshold: short spread
+    if z-score < -threshold: long spread
+
+    value synth buy buying individual components
+
+    we want to either buy or sell synth / 
+
+
+    dealing with not enough volume to buy/sell synth?
+
+    modify order depth to add synthetic order volume and later parse into components in post-processing
+
+
+    how do we buy synthetic and display synthetic volumes, we obv never buy components individually
+
+    creating order depth for synthetic
+
+    if there are 20 strawberries, 5 jams, 2 djembes -> for 6, 3, 1 it translates to volume of 1 synthetic at whatever price is being displayed
+
+    for 2 synthetics, we'd pick off volume from other price levels which prices our components differently
+
+    [(254, 21), (247, 8), (231, 12)]
+    [(254, 91), (247, 8), (231, 12)]
+    [(254, 11), (247, 8), (231, 12)]
+
+    parameters for z-score trading spreads
+    thresh: 8, std_window: 25, sma_window: 125, pnl: 12486.761331593298
+    thresh: 10, std_window: 25, sma_window: 150, pnl: 11953.98168192296
+    thresh: 5, std_window: 20, sma_window: 35, pnl: 10530.0
+
+    '''
