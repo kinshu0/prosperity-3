@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Prosperity 3 challenge consisted of 15 days of algorithmic trading, divided into 5 rounds of 72 hours each. Submissions were due at 6 AM for each round.
+The Prosperity 3 challenge consisted of 15 days of algorithmic trading, divided into 5 rounds of 72 hours each. Submissions were due at 6 AM for each round. My teammate and I competed as team spacepirate. We placed 11th in the US and 37th worldwide out of 12,680+ participating teams!
 
 ## Overall Strategy
 
