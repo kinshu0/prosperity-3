@@ -391,6 +391,66 @@ class Trader:
         
         return orders
 
+    # def coconut_coupon_orders(
+    #     self,
+    #     coconut_coupon_order_depth: OrderDepth,
+    #     coconut_coupon_position: int,
+    #     traderData: Dict[str, Any],
+    #     volatility: float,
+    # ) -> List[Order]:
+    #     traderData['past_coupon_vol'].append(volatility)
+    #     if len(traderData['past_coupon_vol']) < self.params[Product.VOUCHER_10000]['std_window']:
+    #         return None, None
+
+    #     if len(traderData['past_coupon_vol']) > self.params[Product.VOUCHER_10000]['std_window']:
+    #         traderData['past_coupon_vol'].pop(0)
+        
+    #     all_std = 0.007362
+
+    #     vol_z_score = (volatility - self.params[Product.VOUCHER_10000]['mean_volatility']) / all_std
+    #     # vol_z_score = (volatility - self.params[Product.VOUCHER_10000]['mean_volatility']) / np.std(traderData['past_coupon_vol'])
+    #     # print(f"vol_z_score: {vol_z_score}")
+    #     # print(f"zscore_threshold: {self.params[Product.COCONUT_COUPON]['zscore_threshold']}")
+    #     if (
+    #         vol_z_score 
+    #         >= self.params[Product.VOUCHER_10000]['zscore_threshold']
+    #     ):
+    #         if coconut_coupon_position != -self.LIMIT[Product.VOUCHER_10000]:
+    #             target_coconut_coupon_position = -self.LIMIT[Product.VOUCHER_10000]
+    #             if len(coconut_coupon_order_depth.buy_orders) > 0:
+    #                 best_bid = max(coconut_coupon_order_depth.buy_orders.keys())
+    #                 target_quantity = abs(target_coconut_coupon_position - coconut_coupon_position)
+    #                 quantity = min(
+    #                     target_quantity,
+    #                     abs(coconut_coupon_order_depth.buy_orders[best_bid]),
+    #                 )
+    #                 quote_quantity = target_quantity - quantity
+    #                 if quote_quantity == 0:
+    #                     return [Order(Product.VOUCHER_10000, best_bid, -quantity)], []
+    #                 else:
+    #                     return [Order(Product.VOUCHER_10000, best_bid, -quantity)], [Order(Product.VOUCHER_10000, best_bid, -quote_quantity)]
+
+    #     elif (
+    #         vol_z_score
+    #         <= -self.params[Product.VOUCHER_10000]["zscore_threshold"]
+    #     ):
+    #         if coconut_coupon_position != self.LIMIT[Product.VOUCHER_10000]:
+    #             target_coconut_coupon_position = self.LIMIT[Product.VOUCHER_10000]
+    #             if len(coconut_coupon_order_depth.sell_orders) > 0:
+    #                 best_ask = min(coconut_coupon_order_depth.sell_orders.keys())
+    #                 target_quantity = abs(target_coconut_coupon_position - coconut_coupon_position)
+    #                 quantity = min(
+    #                     target_quantity,
+    #                     abs(coconut_coupon_order_depth.sell_orders[best_ask]),
+    #                 )
+    #                 quote_quantity = target_quantity - quantity
+    #                 if quote_quantity == 0:
+    #                     return [Order(Product.VOUCHER_10000, best_ask, quantity)], []
+    #                 else:
+    #                     return [Order(Product.VOUCHER_10000, best_ask, quantity)], [Order(Product.VOUCHER_10000, best_ask, quote_quantity)]
+
+    #     return None, None
+    
     def coconut_coupon_orders(
         self,
         coconut_coupon_order_depth: OrderDepth,
@@ -405,7 +465,10 @@ class Trader:
         if len(traderData['past_coupon_vol']) > self.params[Product.VOUCHER_10000]['std_window']:
             traderData['past_coupon_vol'].pop(0)
         
-        vol_z_score = (volatility - self.params[Product.VOUCHER_10000]['mean_volatility']) / np.std(traderData['past_coupon_vol'])
+        all_std = 0.007362
+
+        vol_z_score = (volatility - self.params[Product.VOUCHER_10000]['mean_volatility']) / all_std
+        # vol_z_score = (volatility - self.params[Product.VOUCHER_10000]['mean_volatility']) / np.std(traderData['past_coupon_vol'])
         # print(f"vol_z_score: {vol_z_score}")
         # print(f"zscore_threshold: {self.params[Product.COCONUT_COUPON]['zscore_threshold']}")
         if (
