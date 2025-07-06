@@ -1615,6 +1615,7 @@ dependencies = [
     { name = "pandas" },
     { name = "plotly" },
     { name = "prosperity3bt" },
+    { name = "randomcolor" },
     { name = "scikit-learn" },
     { name = "statsmodels" },
     { name = "tqdm" },
@@ -1633,7 +1634,8 @@ requires-dist = [
     { name = "orjson", specifier = ">=3.10.16" },
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "plotly", specifier = ">=6.0.1" },
-    { name = "prosperity3bt", specifier = ">=0.6.0" },
+    { name = "prosperity3bt", specifier = ">=0.11.0" },
+    { name = "randomcolor", specifier = ">=0.4.4.6" },
     { name = "scikit-learn", specifier = ">=1.6.1" },
     { name = "statsmodels", specifier = ">=0.14.4" },
     { name = "tqdm", specifier = ">=4.67.1" },
@@ -1644,7 +1646,7 @@ dev = [{ name = "jupyter", specifier = ">=1.1.1" }]
 
 [[package]]
 name = "prosperity3bt"
-version = "0.6.0"
+version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ipython" },
@@ -1653,9 +1655,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d3/df/7ab219783babd14df651ce89c3d475f48b98f743bf04377de544d83c5400/prosperity3bt-0.6.0.tar.gz", hash = "sha256:1be6d6298b61cc1c57c6e3643a4477dbe7defcd89abdf267ce6472223bebabe3", size = 4264860 }
+sdist = { url = "https://files.pythonhosted.org/packages/31/8a/4f882bc6d3cedea4a6ca5a5c6a65255e7fb31f1c7e02d11a1ee74c880c07/prosperity3bt-0.11.0.tar.gz", hash = "sha256:bf711bfab734fee08abf801252e3a40db762524d1ca935f3561dc7d0f524ded5", size = 30079171 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/10/58/6b7e8510b7663706450e5f3f53682672e5c6ab5c406af8c69a19f6cea392/prosperity3bt-0.6.0-py3-none-any.whl", hash = "sha256:bf568bb2f1bbc9151fd67e744cddec5bacea4a7d74d593a5f4261428cbdaa351", size = 4536492 },
+    { url = "https://files.pythonhosted.org/packages/71/ba/e08b9aa58f98fa6d661d41a19ecaad33a11e582a5cd6c65be6804258ceb9/prosperity3bt-0.11.0-py3-none-any.whl", hash = "sha256:8584bc2078ee867899c8e7d7c70ada519304c56a77f0bcebe1884a56ff7c7ce1", size = 31522665 },
 ]
 
 [[package]]
@@ -1895,6 +1897,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/80/a4/f0a4266ff2d94a87f7c32895b1716f9ac0edc0471d518462beeb0a9a94b5/pyzmq-26.3.0-pp311-pypy311_pp73-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:2cf9ab0dff4dbaa2e893eb608373c97eb908e53b7d9793ad00ccbd082c0ee12f", size = 799507 },
     { url = "https://files.pythonhosted.org/packages/78/14/3d7d459f496fab8e487b23423ccba57abf7153a4fde0c3e000500fa02ff8/pyzmq-26.3.0-pp311-pypy311_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:3ec332675f6a138db57aad93ae6387953763f85419bdbd18e914cb279ee1c451", size = 758002 },
     { url = "https://files.pythonhosted.org/packages/22/65/cc1f0e1db1290770285430e36d51767e620487523e6a04094be637e55698/pyzmq-26.3.0-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:eb96568a22fe070590942cd4780950e2172e00fb033a8b76e47692583b1bd97c", size = 556425 },
+]
+
+[[package]]
+name = "randomcolor"
+version = "0.4.4.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/50/96/1f3bfafcb0e7bd7fbc122fa1fd4af7fc6b59543ceaf98786cc14a070db25/randomcolor-0.4.4.6.tar.gz", hash = "sha256:d2b66f07ea8606aee55b648aed82e810964bbd3f6dfba0e6d57818761d437c93", size = 4582 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c9/64/b246ee088465046ae2111c8eb3373062014b77ce6ab9af9c70bf976af980/randomcolor-0.4.4.6-py3-none-any.whl", hash = "sha256:1f1a81d39cacae560c499fda390913a6bf47d6c0c1cd61f625a2a87a16dfff45", size = 4844 },
 ]
 
 [[package]]

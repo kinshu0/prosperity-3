@@ -38,6 +38,13 @@ PARAMS = {
     "ink_window_size": 20,
     "ink_position_limit": 50,
     "clear_price_thresh": 0.0,
+
+    "sma_window_size": 125,
+    "std_window_size": 25,
+    "thresh_z": 8
+    # "sma_window_size": 300,
+    # "std_window_size": 80,
+    # "thresh_z": 8
 }
 
 
@@ -185,184 +192,6 @@ class Trader:
         self.params = params
         if params is None:
             self.params = PARAMS
-
-    def market_take(
-        self,
-        product: str,
-        order_depth: OrderDepth,
-        fair: int | float,
-        width: int | float,
-        position: int,
-        position_limit: int,
-    ) -> tuple[list[Order], int, int]:
-        to_buy = position_limit - position
-        to_sell = position - -position_limit
-
-        buy_orders = sorted(order_depth.buy_orders.items(), reverse=True)
-        sell_orders = sorted(order_depth.sell_orders.items())
-
-        own_orders = []
-        buy_order_volume = 0
-        sell_order_volume = 0
-
-        max_buy_price = fair - width
-        min_sell_price = fair + width
-
-        for price, volume in sell_orders:
-            if to_buy > 0 and price <= max_buy_price:
-                quantity = min(to_buy, -volume)
-                own_orders.append(Order(product, price, quantity))
-                to_buy -= quantity
-                order_depth.sell_orders[price] += quantity
-                if order_depth.sell_orders[price] == 0:
-                    order_depth.sell_orders.pop(price)
-                buy_order_volume += quantity
-
-        for price, volume in buy_orders:
-            if to_sell > 0 and price >= min_sell_price:
-                quantity = min(to_sell, volume)
-                own_orders.append(Order(product, price, -quantity))
-                to_sell -= quantity
-                order_depth.buy_orders[price] -= quantity
-                if order_depth.buy_orders[price] == 0:
-                    order_depth.buy_orders.pop(price)
-                sell_order_volume += quantity
-
-        return own_orders, buy_order_volume, sell_order_volume
-
-    def clear_position(
-        self,
-        product: str,
-        order_depth: OrderDepth,
-        fair: float | int,
-        position: int,
-        buy_order_volume: int,
-        sell_order_volume: int,
-        position_limit: int,
-    ) -> list[Order]:
-        pos_after_take = position + buy_order_volume - sell_order_volume
-        own_orders = []
-
-        clear_width = 0
-
-        market_bids = list(order_depth.buy_orders.items())
-        market_bids.sort(reverse=True)
-
-        for bid_price, bid_volume in market_bids:
-            if pos_after_take > 0 and bid_price >= fair + clear_width:
-                sell_vol = min(
-                    bid_volume,
-                    pos_after_take,
-                    position - sell_order_volume - -position_limit,
-                )
-                sell_order = Order(product, bid_price, -sell_vol)
-
-                own_orders.append(sell_order)
-                pos_after_take -= sell_vol
-                sell_order_volume += sell_vol
-
-                order_depth.buy_orders[bid_price] -= sell_vol
-                if order_depth.buy_orders[bid_price] == 0:
-                    order_depth.buy_orders.pop(bid_price)
-
-        market_asks = list(order_depth.sell_orders.items())
-        market_asks.sort()
-
-        for ask_price, ask_volume in market_asks:
-            if pos_after_take < 0 and ask_price <= fair - clear_width:
-                buy_vol = min(
-                    -ask_volume,
-                    -pos_after_take,
-                    position_limit - (position + buy_order_volume),
-                )
-                buy_order = Order(product, ask_price, buy_vol)
-
-                own_orders.append(buy_order)
-                pos_after_take += buy_vol
-                buy_order_volume += buy_vol
-
-                order_depth.sell_orders[ask_price] += buy_vol
-                if order_depth.sell_orders[ask_price] == 0:
-                    order_depth.sell_orders.pop(ask_price)
-
-        return own_orders, buy_order_volume, sell_order_volume
-
-    def market_make(
-        self,
-        product: str,
-        order_depth: OrderDepth,
-        fair: float | int,
-        make_width: int,
-        position: int,
-        buy_order_volume: int,
-        sell_order_volume: int,
-        position_limit: int,
-    ) -> list[Order]:
-        orders = []
-
-        market_bids = list(order_depth.buy_orders.items())
-        market_bids.sort(reverse=True)
-
-        best_bid, _ = max(market_bids)
-        bid_vol = position_limit - (position + buy_order_volume)
-
-        market_asks = list(order_depth.sell_orders.items())
-        market_asks.sort()
-
-        best_ask, _ = min(market_asks)
-        ask_vol = position - sell_order_volume - -position_limit
-        ask_vol = -ask_vol
-
-        penny_bid = min(best_bid + 1, math.floor(fair - make_width))
-        penny_ask = max(best_ask - 1, math.ceil(fair + make_width))
-
-        orders.append(Order(product, penny_bid, bid_vol))
-        orders.append(Order(product, penny_ask, ask_vol))
-        buy_order_volume += bid_vol
-        sell_order_volume += ask_vol
-
-        return orders, buy_order_volume, sell_order_volume
-
-    def mm_mid(self, product: str, order_depth: OrderDepth, trader_data: dict) -> float:
-        if len(order_depth.sell_orders) != 0 and len(order_depth.buy_orders) != 0:
-            best_ask = min(order_depth.sell_orders.keys())
-            best_bid = max(order_depth.buy_orders.keys())
-
-            adverse_volume = 15
-            # reversion_beta = -0.18172393033850867
-            reversion_beta = 0
-
-            filtered_ask = [
-                price
-                for price in order_depth.sell_orders.keys()
-                if abs(order_depth.sell_orders[price]) >= adverse_volume
-            ]
-            filtered_bid = [
-                price
-                for price in order_depth.buy_orders.keys()
-                if abs(order_depth.buy_orders[price]) >= adverse_volume
-            ]
-
-            mm_ask = min(filtered_ask) if len(filtered_ask) > 0 else None
-            mm_bid = max(filtered_bid) if len(filtered_bid) > 0 else None
-            if mm_ask == None or mm_bid == None:
-                if trader_data.get(f"{product}_last_price", None) == None:
-                    mmmid_price = (best_ask + best_bid) / 2
-                else:
-                    mmmid_price = trader_data[f"{product}_last_price"]
-            else:
-                mmmid_price = (mm_ask + mm_bid) / 2
-
-            if trader_data.get(f"{product}_last_price", None) != None:
-                last_price = trader_data[f"{product}_last_price"]
-                last_returns = (mmmid_price - last_price) / last_price
-                pred_returns = last_returns * reversion_beta
-                fair = mmmid_price + (mmmid_price * pred_returns)
-            else:
-                fair = mmmid_price
-            trader_data[f"{product}_last_price"] = mmmid_price
-            return fair
-        return None
 
     def mid_price(self, order_depth: OrderDepth) -> float:
         best_ask = min(order_depth.sell_orders.keys())
@@ -636,15 +465,8 @@ class Trader:
     def basket(
         self, order_depths: dict[str, OrderDepth], positions: dict[str, int], trader_data: dict
     ) -> list[Order]:
-        
-        synth_weights = {
-            Product.BASKET1: 1,
-            Product.CROISSANTS: -6,
-            Product.JAMS: -3,
-            Product.DJEMBES: -1
-        }
 
-        synthetics = [
+        spreads = [
             {
                 Product.BASKET1: 1,
                 Product.CROISSANTS: -6,
@@ -670,76 +492,130 @@ class Trader:
             },
         ]
 
-        for prod in synth_weights:
+        spread_weights = spreads[1]
+
+        for prod in spread_weights:
             positions[prod] = positions.get(prod, 0)
 
-        synth_od = self.construct_synth_od(order_depths, synth_weights)
+        synth_od = self.construct_synth_od(order_depths, spread_weights)
         
         best_ask = min(synth_od.sell_orders.keys())
         best_bid = max(synth_od.buy_orders.keys())
         
-        sma_window_size = 35
-        std_window_size = 20
-        thresh_z = 3
+        # thresh: 8, std_window: 25, sma_window: 125
 
-        # thresh_z = 3
+        # this works TODO:
+
+        # sma_window_size = self.params['sma_window_size']
+        # std_window_size = self.params['std_window_size']
+        # thresh_z = self.params['thresh_z']
+        
+        # sma_window_size = 125
+        # std_window_size = 25
+        # thresh_z = 8
 
         swmid = self.swmid(synth_od)
 
-        spread_price_hist = trader_data.get("spread_price_hist", [])
-        spread_price_hist = deque(spread_price_hist)
-        swmid_mean = (
-            sum(spread_price_hist) / len(spread_price_hist) if spread_price_hist else swmid
-        )
+        # spread_price_hist = trader_data.get("spread_price_hist", [])
+        # spread_price_hist = deque(spread_price_hist)
+        # swmid_mean = (
+        #     sum(spread_price_hist) / len(spread_price_hist) if spread_price_hist else swmid
+        # )
         
-        std = 0
-        std_window_size = min(std_window_size, len(spread_price_hist))
-        for i in reversed(range(std_window_size)):
-            std += (spread_price_hist[i] - swmid_mean) ** 2
-        std = (std / std_window_size) ** (1 / 2) if spread_price_hist else 1
+        # std = 0
+        # std_window_size = min(std_window_size, len(spread_price_hist))
+        # for i in reversed(range(std_window_size)):
+        #     std += (spread_price_hist[i] - swmid_mean) ** 2
+        # std = (std / std_window_size) ** (1 / 2) if spread_price_hist else 1
 
-        std = max(std, 1)
+        # std = max(std, 1)
 
-        orders = []
-        z = (swmid - swmid_mean) / std
+        # orders = []
+        # z = (swmid - swmid_mean) / std
 
-        threshold_triggered = False
+        # threshold_triggered = False
 
         position_limits = {
             Product.CROISSANTS: 250,
             Product.JAMS: 350,
             Product.DJEMBES: 60,
             Product.BASKET1: 60,
+            Product.BASKET2: 100
         }
 
         orders = []
 
-        # print(z)
+        # # big change up
+        # if z >= thresh_z:
+        #     # print('SELL THRESHOLD TRIGGERED')
+        #     sell_synth_orders = self.sell_synth(best_bid - aggressiveness, position_limits, positions, synth_od, order_depths, synth_weights)
+        #     orders.extend(sell_synth_orders)
+        #     threshold_triggered = True
 
-        # big change up
-        if z >= thresh_z:
+        # # big change down
+        # elif z <= -thresh_z:
+        #     # print('BUY THRESHOLD TRIGGERED')
+        #     buy_synth_orders = self.buy_synth(best_ask + aggressiveness, position_limits, positions, synth_od, order_depths, synth_weights)
+        #     orders.extend(buy_synth_orders)
+        #     threshold_triggered = True
+
+        # synth_ods = [self.construct_synth_od(order_depths, synth) for synth in spreads]
+
+        # synth_swmids = [self.swmid(synth_od) for synth_od in synth_ods]
+
+        # # swmid with max abolute value and its index
+        # max_smid_index = 0
+        # for i, smid in enumerate(synth_swmids):
+        #     if abs(smid) > abs(synth_swmids[max_smid_index]):
+        #         max_smid_index = i
+        
+        # spread_weights = spreads[max_smid_index]
+
+        # best_ask = min(synth_ods[max_smid_index].sell_orders.keys())
+        # best_bid = max(synth_ods[max_smid_index].buy_orders.keys())
+
+        # swmid = synth_swmids[max_smid_index]
+
+        # abs_threshold = 50
+
+        aggresiveness = 5
+
+
+        # diff = pb2_mid - pb2_fair
+        # pb2synth_swmid = self.swmid_synth(PB2_SYNTH_WEIGHTS, order_depths)
+
+        # diff = pb2_mid - pb2synth_swmid
+        # diff = pb2_mid - pb2synth_swmid
+        # diff = pb2_mid - pb2_fair
+
+        quantity = 1
+
+        mean_diff = 76
+        std = 64
+
+        thresh = 2 * std
+
+
+        if swmid >= mean_diff + thresh:
+            # print('BUY THRESHOLD TRIGGERED')
+            buy_synth_orders = self.buy_synth(best_ask + aggresiveness, position_limits, positions, synth_od, order_depths, spread_weights)
+            orders.extend(buy_synth_orders)
+            threshold_triggered = True
+        elif swmid <= mean_diff - thresh:
             # print('SELL THRESHOLD TRIGGERED')
-            sell_synth_orders = self.sell_synth(best_ask, position_limits, positions, synth_od, order_depths, synth_weights)
+            sell_synth_orders = self.sell_synth(best_bid - aggresiveness, position_limits, positions, synth_od, order_depths, spread_weights)
             orders.extend(sell_synth_orders)
             threshold_triggered = True
 
-        # big change down
-        elif z <= -thresh_z:
-            # print('BUY THRESHOLD TRIGGERED')
-            buy_synth_orders = self.buy_synth(best_ask, position_limits, positions, synth_od, order_depths, synth_weights)
-            orders.extend(buy_synth_orders)
-            threshold_triggered = True
+        # if swmid > swmid
         
         """Update price history"""
-        spread_price_hist.append(swmid)
+        # spread_price_hist.append(swmid)
 
-        if len(spread_price_hist) > sma_window_size:
-            spread_price_hist.popleft()
+        # if len(spread_price_hist) > sma_window_size:
+        #     spread_price_hist.popleft()
 
-        trader_data["spread_price_hist"] = list(spread_price_hist)
-
-        if orders:
-            print(orders)
+        # trader_data["spread_price_hist"] = list(spread_price_hist)
 
         return orders
 

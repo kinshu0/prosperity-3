@@ -300,36 +300,53 @@ class Trader:
     
     
     def pb2(self, order_depths: dict[str, OrderDepth], trader_data: dict, position: int):
+
+        '''
+        If i want to buy / sell spread in a structured way
+
+        use the weights to ensure
+        
+        '''
         
         pb2_fair = self.fair_b2(order_depths, trader_data)
         
         pb2_mid = self.swmid(order_depths[Product.PB2])
-
-        '''
-        TODO trade entire spread
-        if diff greater than threshold: sell pb2 buy synth, has to be fixed quantity
-
-        '''
 
         pb2_orders = []
         croissant_orders = []
         jam_orders = []
         djembe_orders = []
 
-        diff = pb2_mid - pb2_fair
+        # diff = pb2_mid - pb2_fair
+        pb2synth_swmid = self.swmid_synth(PB2_SYNTH_WEIGHTS, order_depths)
+
+        diff = pb2_mid - pb2synth_swmid
+        # diff = pb2_mid - pb2_fair
 
         quantity = 1
 
-        thresh = 20
-        # thresh = 10
+        mean_diff = 76
+        std = 64
+
+        thresh = 2 * std
         # diff = abs(diff)
 
-        if diff > thresh:
+        if diff > mean_diff + thresh:
+            print('SELLING SPREAD')
+            print(order_depths[Product.PB2].buy_orders)
+            print(order_depths[Product.CROISSANTS].sell_orders)
+            print(order_depths[Product.JAMS].sell_orders)
+            
             pb2_orders.append(Order(Product.PB2, 0, -1*quantity))
             croissant_orders.append(Order(Product.CROISSANTS, 999999, 4*quantity))
             jam_orders.append(Order(Product.JAMS, 999999, 2*quantity))
-        elif diff < thresh:
-        # elif diff < -thresh:
+
+        elif diff < mean_diff - thresh:
+            print('BUYING SPREAD')
+            print(order_depths[Product.PB2].sell_orders)
+            print(order_depths[Product.CROISSANTS].buy_orders)
+            print(order_depths[Product.JAMS].buy_orders)
+
             pb2_orders.append(Order(Product.PB2, 999999, 1*quantity))
             croissant_orders.append(Order(Product.CROISSANTS, 0, -4*quantity))
             jam_orders.append(Order(Product.JAMS, 0, -2*quantity))
@@ -340,41 +357,6 @@ class Trader:
             Product.JAMS: jam_orders,
             Product.DJEMBES: djembe_orders
         }
-
-
-        # if diff > 
-
-        # # pb2_mid = self.swmid(order_depths[Product.PB2])
-
-        # buy_orders = self.limit_buy(
-        #     Product.PB2,
-        #     order_depths[Product.PB2],
-        #     pb2_fair - 5,
-        #     position,
-        #     POSITION_LIMIT[Product.PB2],
-        # )
-
-        # sell_orders = self.limit_sell(
-        #     Product.PB2,
-        #     order_depths[Product.PB2],
-        #     pb2_fair + 5,
-        #     position,
-        #     POSITION_LIMIT[Product.PB2],
-        # )
-
-        # take_orders = buy_orders + sell_orders
-
-        # # TODO: clear
-
-        # take_orders, buy_order_volume, sell_order_volume = self.take_orders(
-        #     Product.PB2,
-        #     order_depths[Product.PB2],
-        #     pb2_fair,
-        #     10,
-        #     position
-        # )
-
-        # return take_orders
 
     def run(self, state: TradingState) -> dict[str, list[Order]]:
         self.timestamp = state.timestamp

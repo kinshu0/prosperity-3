@@ -13,3 +13,5 @@ wheels/
 .DS_Store
 
 tools/
+
+*.log
