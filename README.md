@@ -187,10 +187,40 @@ This round coincided with team members' travel schedules, significantly limiting
 
 Given more time, we would have extended our analysis to properly handle the full strike range and potentially incorporated term structure effects into our volatility model.
 
-## Round 4
+## Round 4: Macaron Conversion Arbitrage
 
-Cross-market exchange arbitrage with macaron conversions
-[To be completed]
+### Overview
+
+Round 4 introduced macarons with an abundance of market data including sunlight indices, sugar prices, shipping costs, tariffs, and storage capacity. Similar to last year's challenge, this appeared designed to lure participants into searching for complex patterns in the environmental data.
+
+Learning from prior experience falling into this "rabbit hole," we quickly abandoned pattern-finding attempts and instead focused on the fundamental arbitrage opportunity: the conversion mechanism.
+
+![Island Arbitrage](media/image-7.png)
+
+### The Conversion Mechanism
+
+The challenge provided a conversion system allowing traders to import macarons from the island of Pristine Cuisine with specific constraints:
+
+- **Position Requirements**: Must hold a position to request conversion
+- **Conversion Limits**: Can only convert up to the absolute value of current position
+- **Rate Limits**: Maximum of 10 conversions per trading cycle
+- **Costs**: Transport fees and import/export tariffs applied
+
+The key insight was that conversions resolved before new orders filled within the same iteration, enabling continuous arbitrage.
+
+### Arbitrage Strategy
+
+Our strategy exploited the price differential between the island market and local order book:
+
+1. **Calculate breakeven price**: Island cost + transport + tariffs
+2. **Sell locally** at breakeven + premium (1-3 seashells markup)
+3. **Import via conversion** to cover the short position
+
+This approach captured risk-free spreads between the island's import costs and local market prices, with our position naturally balancing between selling and importing.
+
+### Strategic Trade-offs
+
+While some teams successfully extracted signals from the environmental data (sunlight, sugar prices, etc.), we found these patterns highly volatile and difficult to model reliably under time constraints. Given the choice between pursuing uncertain predictive models versus executing straightforward conversion arbitrage, we opted for the more consistent returns of the arbitrage strategy.
 
 
 ## Round 5
